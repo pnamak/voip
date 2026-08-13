@@ -53,4 +53,12 @@ th { color: var(--muted); font-size: 12px; font-weight: 600; }
 .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; background: rgba(11,110,153,.25); }
 .tag.post { background: rgba(245,158,11,.2); color: var(--gold); }
 .muted { color: var(--muted); }
+.status { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; }
+.status i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; display: inline-block; }
+.status.registered { color: var(--ok); }
+.status.in_call { color: var(--gold); }
+.status.offline { color: var(--danger); }
+.status.unreachable { color: #fbbf24; }
+.status.disabled, .status.unknown { color: var(--muted); }
+.card .toolbar h3 { margin: 0; }
 @media (max-width: 800px) { .app { grid-template-columns: 1fr; } .side { display: flex; flex-wrap: wrap; gap: 8px; } .nav { display: flex; flex-wrap: wrap; } }

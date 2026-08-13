@@ -34,6 +34,26 @@ PY
 )"
 fi
 
+AMI_HOST="${SMARTVOICE_AMI_HOST:-127.0.0.1}"
+AMI_PORT="${SMARTVOICE_AMI_PORT:-5038}"
+AMI_USER="${SMARTVOICE_AMI_USER:-magnus}"
+AMI_SECRET="${SMARTVOICE_AMI_SECRET:-}"
+if [[ -z "${AMI_SECRET}" && -f /etc/asterisk/manager.conf ]]; then
+  AMI_SECRET="$(python3 - <<'PY'
+from pathlib import Path
+section = None
+for line in Path("/etc/asterisk/manager.conf").read_text(encoding="utf-8", errors="replace").splitlines():
+    raw = line.split(";", 1)[0].strip()
+    if raw.startswith("[") and raw.endswith("]"):
+        section = raw[1:-1]
+        continue
+    if section == "magnus" and "=" in raw and raw.split("=", 1)[0].strip().lower() == "secret":
+        print(raw.split("=", 1)[1].strip())
+        break
+PY
+)"
+fi
+
 install -d -m 0755 "${APP_ROOT}"
 export DEBIAN_FRONTEND=noninteractive
 apt-get install -y python3-venv python3-pip
@@ -59,6 +79,10 @@ SMARTVOICE_OCS_URL=${OCS_URL}
 SMARTVOICE_OCS_KEY=${API_KEY}
 SMARTVOICE_OCS_SECRET=${API_SECRET}
 SMARTVOICE_OCS_MOCK=0
+SMARTVOICE_AMI_HOST=${AMI_HOST}
+SMARTVOICE_AMI_PORT=${AMI_PORT}
+SMARTVOICE_AMI_USER=${AMI_USER}
+SMARTVOICE_AMI_SECRET=${AMI_SECRET}
 EOF
 chmod 600 "${APP_ROOT}/env"
 

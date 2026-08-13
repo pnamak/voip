@@ -1,5 +1,6 @@
 const titles = {
-    dashboard: ["Dashboard", "Customers, wallets, and real-time charging"],
+    dashboard: ["Dashboard", "Customers, wallets, SIP devices, and real-time charging"],
+    sip: ["SIP devices", "Live registration and call status from the MagnusBilling OCS and Asterisk"],
     customers: ["Customers", "CRM in SmartVoice, balances in the MagnusBilling OCS"],
     products: ["Products", "Catalog in BSS, rate plans charged by the OCS"],
     payments: ["Payments", "Collect in BSS, apply credit through OCS refill"],
@@ -69,12 +70,23 @@ async function boot() {
     }
 }
 
+let refreshTimer = null;
+
 async function show(name) {
+    if (refreshTimer) {
+        clearInterval(refreshTimer);
+        refreshTimer = null;
+    }
     document.querySelectorAll(".nav button").forEach((btn) => btn.classList.toggle("active", btn.dataset.view === name));
     document.getElementById("title").textContent = titles[name][0];
     document.getElementById("subtitle").textContent = titles[name][1];
     const render = views[name];
     if (render) await render();
+    if (name === "sip") {
+        refreshTimer = setInterval(() => {
+            views.sip().catch(() => {});
+        }, 5000);
+    }
 }
 
 document.querySelectorAll(".nav button").forEach((btn) => btn.addEventListener("click", () => show(btn.dataset.view)));
@@ -91,7 +103,10 @@ const views = {
                 <div class="card"><h3>OCS wallet</h3><div class="n">${money(data.ocs_wallet)}</div></div>
                 <div class="card"><h3>Billed from CDRs</h3><div class="n">${money(data.usage_billed)}</div></div>
                 <div class="card"><h3>Live calls</h3><div class="n">${data.live_calls}</div></div>
+                <div class="card"><h3>SIP registered</h3><div class="n">${data.sip_registered || 0} / ${data.sip_devices || 0}</div></div>
+                <div class="card"><h3>SIP offline</h3><div class="n">${data.sip_offline || 0}</div></div>
             </div>
+            <div class="card"><h3>SIP devices</h3>${sipTable(data.sip || [])}</div>
             <div class="card"><h3>Recent OCS charges</h3>${table(["User", "Destination", "Seconds", "Charged"], data.recent_calls.map((r) => [r.idUserusername || r.id_user, r.calledstation, r.sessiontime, money(r.sessionbill)]))}</div>
         `;
     },
@@ -156,6 +171,28 @@ const views = {
             <div class="card">${table(["ID", "Username", "Company", "Customers", "Downstream wallet", "Own credit"], data.rows.map((r) => [r.id, r.username, r.company_name, r.customers, money(r.customer_wallet), money(r.credit)]))}</div>
         `;
     },
+    async sip() {
+        const data = await api("/api/sip-devices");
+        setOcsPill(data.ocs);
+        const counts = data.counts || {};
+        document.getElementById("view").innerHTML = `
+            <div class="grid">
+                <div class="card"><h3>Devices</h3><div class="n">${counts.total || 0}</div></div>
+                <div class="card"><h3>Registered</h3><div class="n">${counts.registered || 0}</div></div>
+                <div class="card"><h3>In call</h3><div class="n">${counts.in_call || 0}</div></div>
+                <div class="card"><h3>Offline</h3><div class="n">${counts.offline || 0}</div></div>
+                <div class="card"><h3>Unreachable</h3><div class="n">${counts.unreachable || 0}</div></div>
+                <div class="card"><h3>Disabled</h3><div class="n">${counts.disabled || 0}</div></div>
+            </div>
+            <div class="card">
+                <div class="toolbar">
+                    <h3>Current SIP devices</h3>
+                    <span class="muted">Updated ${esc(data.as_of || "")} · auto-refresh 5s · ${esc((data.ami && data.ami.detail) || "")}</span>
+                </div>
+                ${sipTable(data.rows || [])}
+            </div>
+        `;
+    },
     async usage() {
         const data = await api("/api/usage");
         setOcsPill(data.ocs);
@@ -176,6 +213,37 @@ const views = {
         `;
     },
 };
+
+function esc(value) {
+    return String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+}
+
+function presenceLabel(presence) {
+    return {
+        registered: "Registered",
+        in_call: "In call",
+        offline: "Offline",
+        unreachable: "Unreachable",
+        disabled: "Disabled",
+        unknown: "Unknown",
+    }[presence] || presence || "Unknown";
+}
+
+function sipTable(rows) {
+    return table(
+        ["Device", "Customer", "Caller ID", "Status", "Contact", "Latency", "Live call", "Host"],
+        rows.map((r) => [
+            `<strong>${esc(r.name)}</strong>`,
+            esc(r.customer),
+            esc(r.callerid),
+            `<span class="status ${esc(r.presence)}"><i></i>${esc(presenceLabel(r.presence))}</span><div class="muted">${esc(r.line_status || r.endpoint_state || "")}</div>`,
+            esc(r.contact || "—"),
+            r.rtt_ms != null && r.rtt_ms !== "" ? `${esc(r.rtt_ms)} ms` : "—",
+            r.in_call ? `${esc(r.live_destination || "active")} (${esc(r.live_duration || 0)}s)` : "idle",
+            esc(r.host || ""),
+        ]),
+    );
+}
 
 function table(headers, rows) {
     if (!rows.length) return '<p class="muted">No records yet.</p>';

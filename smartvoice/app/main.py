@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from . import config
 from .ocs import MagnusBillingOcs, MockOcs, OcsError, get_ocs
+from .sip_status import collect_sip_monitor
 from .store import BssStore
 
 APP_DIR = config.APP_DIR
@@ -180,6 +181,7 @@ def dashboard(user: str = Depends(current_user)) -> dict[str, Any]:
     calls = _rows(ocs().read("call", page=1, limit=50))
     billed = sum(float(row.get("sessionbill") or 0) for row in calls)
     online = _rows(ocs().read("callOnLine", page=1, limit=50))
+    sip = collect_sip_monitor(ocs())
     return {
         "customers": len(customers),
         "resellers": len(resellers),
@@ -188,8 +190,13 @@ def dashboard(user: str = Depends(current_user)) -> dict[str, Any]:
         "ocs_wallet": round(wallet, 4),
         "usage_billed": round(billed, 4),
         "live_calls": len(online),
+        "sip_devices": sip["counts"]["total"],
+        "sip_registered": sip["counts"]["registered"],
+        "sip_offline": sip["counts"]["offline"],
+        "sip_in_call": sip["counts"]["in_call"],
         "recent_payments": refills[:8],
         "recent_calls": calls[:8],
+        "sip": sip["rows"][:8],
         "ocs": ocs().health(),
     }
 
@@ -335,6 +342,13 @@ def usage(user: str = Depends(current_user)) -> dict[str, Any]:
         "live": _rows(ocs().read("callOnLine", page=1, limit=100)),
         "ocs": ocs().health(),
     }
+
+
+@app.get("/api/sip-devices")
+def sip_devices(user: str = Depends(current_user)) -> dict[str, Any]:
+    result = collect_sip_monitor(ocs())
+    result["ocs"] = ocs().health()
+    return result
 
 
 @app.get("/api/invoices")

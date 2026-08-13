@@ -33,6 +33,16 @@ OCS_SECRET = os.environ.get("SMARTVOICE_OCS_SECRET", "")
 OCS_TIMEOUT = float(os.environ.get("SMARTVOICE_OCS_TIMEOUT", "20"))
 FORCE_MOCK = _bool("SMARTVOICE_OCS_MOCK", False)
 
+AMI_HOST = os.environ.get("SMARTVOICE_AMI_HOST", "").strip()
+AMI_PORT = int(os.environ.get("SMARTVOICE_AMI_PORT", "5038"))
+AMI_USER = os.environ.get("SMARTVOICE_AMI_USER", "").strip()
+AMI_SECRET = os.environ.get("SMARTVOICE_AMI_SECRET", "")
+AMI_TIMEOUT = float(os.environ.get("SMARTVOICE_AMI_TIMEOUT", "5"))
+
+
+def ami_enabled() -> bool:
+    return bool(AMI_HOST and AMI_USER and AMI_SECRET)
+
 BRAND_NAME = "SmartVoice"
 BRAND_PRODUCT = "SmartVoice BSS"
 OCS_NAME = "MagnusBilling"

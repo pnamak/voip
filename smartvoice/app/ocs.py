@@ -235,7 +235,68 @@ class MockOcs:
                 "terminatecauseid": "16",
             }
         ]
-        self._online = []
+        self._online = [
+            {
+                "id": 1,
+                "sip_account": "alice",
+                "id_user": 21,
+                "ndiscado": "67812345",
+                "status": "answered",
+                "duration": 42,
+                "from_ip": "203.0.113.10",
+                "canal": "PJSIP/alice-00000001",
+            }
+        ]
+        self._sip = [
+            {
+                "id": 1,
+                "id_user": 21,
+                "name": "alice",
+                "defaultuser": "alice",
+                "accountcode": "alice",
+                "idUserusername": "alice",
+                "callerid": "Alice Tari",
+                "cid_number": "Alice Tari",
+                "host": "dynamic",
+                "status": 1,
+                "allow": "alaw,ulaw,g729",
+                "lineStatus": "OK (12 ms) localhost",
+                "secret": "should-not-leak",
+                "useragent": "Zoiper",
+                "fullcontact": "sip:alice@203.0.113.10:5060",
+            },
+            {
+                "id": 2,
+                "id_user": 22,
+                "name": "bobpost",
+                "defaultuser": "bobpost",
+                "accountcode": "bobpost",
+                "idUserusername": "bobpost",
+                "callerid": "Bob Kalsong",
+                "cid_number": "Bob Kalsong",
+                "host": "dynamic",
+                "status": 1,
+                "allow": "alaw,ulaw",
+                "lineStatus": "unregistered",
+                "secret": "should-not-leak",
+                "useragent": "",
+                "fullcontact": "",
+            },
+            {
+                "id": 3,
+                "id_user": 10,
+                "name": "pacific-shop",
+                "defaultuser": "pacific-shop",
+                "accountcode": "pacific",
+                "idUserusername": "pacific",
+                "callerid": "Pacific Shop",
+                "host": "dynamic",
+                "status": 0,
+                "allow": "alaw,ulaw",
+                "lineStatus": "unregistered",
+                "secret": "should-not-leak",
+            },
+        ]
         self._next_user = 30
         self._next_plan = 3
         self._next_refill = 2
@@ -278,6 +339,7 @@ class MockOcs:
             "refill": self._refills,
             "call": self._calls,
             "callOnLine": self._online,
+            "sip": self._sip,
         }.get(module, [])
         rows = self._apply_filter(list(table))
         start = 0 if page <= 1 else (page - 1) * limit

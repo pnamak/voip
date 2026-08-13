@@ -127,6 +127,55 @@ class BssAppTests(unittest.TestCase):
         catalog = self.client.get("/api/products").json()
         self.assertTrue(any(item["name"] == "Call Shop Pack" for item in catalog["catalog"]))
 
+    def test_sip_device_monitoring(self):
+        self.assertEqual(self.client.get("/api/sip-devices").status_code, 401)
+        self._login()
+        data = self.client.get("/api/sip-devices").json()
+        self.assertGreaterEqual(data["count"], 3)
+        self.assertNotIn("should-not-leak", json.dumps(data))
+        by_name = {row["name"]: row for row in data["rows"]}
+        self.assertEqual(by_name["alice"]["presence"], "in_call")
+        self.assertEqual(by_name["bobpost"]["presence"], "offline")
+        self.assertEqual(by_name["pacific-shop"]["presence"], "disabled")
+        self.assertEqual(data["counts"]["in_call"], 1)
+        self.assertEqual(data["counts"]["offline"], 1)
+        self.assertEqual(data["counts"]["disabled"], 1)
+        self.assertIn("alice", json.dumps(data))
+        dashboard = self.client.get("/api/dashboard").json()
+        self.assertGreaterEqual(dashboard["sip_devices"], 3)
+        self.assertGreaterEqual(dashboard["sip_in_call"], 1)
+        html = (ROOT / "smartvoice/app/static/index.html").read_text(encoding="utf-8")
+        self.assertIn('data-view="sip"', html)
+
+
+class SipStatusParseTests(unittest.TestCase):
+    def test_classify_and_parse_pjsip(self):
+        from smartvoice.app.sip_status import (
+            classify_line_status,
+            extract_rtt_ms,
+            parse_pjsip_contacts,
+            parse_pjsip_endpoints,
+        )
+
+        self.assertEqual(classify_line_status("OK (82 ms) localhost"), "registered")
+        self.assertEqual(classify_line_status("unregistered"), "offline")
+        self.assertEqual(classify_line_status("Unavailable"), "unreachable")
+        self.assertEqual(extract_rtt_ms("OK (82 ms) localhost"), 82)
+        contacts = parse_pjsip_contacts(
+            "  Contact:  test01/sip:test01@168.140.248.150:59455;rinstance=1 fac38d4987 Avail        82.703\n"
+            "  Contact:  Pacnet/sip:@168.144.165.191:5060               e52748f9ad NonQual        -nan\n"
+        )
+        self.assertEqual(contacts["test01"]["contact"], "168.140.248.150:59455")
+        self.assertEqual(contacts["test01"]["rtt_ms"], 82)
+        endpoints = parse_pjsip_endpoints(
+            " Endpoint:  <Endpoint/CID.....................................>  <State.....>  <Channels.>\n"
+            " Endpoint:  test01                                               Not in use    0 of inf\n"
+            " Endpoint:  test02/2000                                          Unavailable   0 of inf\n"
+        )
+        self.assertEqual(endpoints["test01"]["state"], "Not in use")
+        self.assertEqual(endpoints["test02"]["state"], "Unavailable")
+        self.assertEqual(endpoints["test01"]["channels"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()
