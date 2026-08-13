@@ -32,6 +32,8 @@ REPORT_MENU.forEach(([slug, title, subtitle]) => {
 const reportState = Object.fromEntries(REPORT_MENU.map(([slug]) => [slug, ""]));
 reportState["blocked-ip"] = "";
 
+let lastCreated = null;
+
 const BASE = window.location.pathname.indexOf("/smartvoice") === 0 ? "/smartvoice" : "";
 
 async function api(path, options) {
@@ -142,19 +144,22 @@ const views = {
     async customers() {
         const data = await api("/api/customers");
         document.getElementById("view").innerHTML = `
-            <form class="form card" onsubmit="return createCustomer(event)">
-                <label>First name <input name="firstname" required></label>
-                <label>Last name <input name="lastname"></label>
-                <label>Username <input name="username"></label>
-                <label>Email <input name="email" type="email"></label>
-                <label>Company <input name="company_name"></label>
-                <label>Opening credit <input name="credit" type="number" step="0.0001" value="0"></label>
-                <label>Type <select name="typepaid"><option value="0">Prepaid</option><option value="1">Postpaid</option></select></label>
-                <label>Credit limit <input name="creditlimit" type="number" step="0.01" value="0"></label>
-                <label>Note <input name="note"></label>
-                <button class="btn" type="submit">Create customer</button>
-            </form>
-            <div class="card">${table(["ID", "Username", "Name", "Type", "OCS credit", "Plan", "Note"], data.rows.map((r) => [r.id, r.username, `${r.firstname || ""} ${r.lastname || ""}`.trim(), r.paid_kind, money(r.credit), r.idPlanname || r.id_plan, r.bss_note || ""]))}</div>
+            ${credentialsCard("Customer")}
+            ${userCreateForm("createCustomer", "Create customer", data, { requireCompany: false, postpaidLocked: false })}
+            <div class="card">${table(
+                ["ID", "Username", "Name", "Email", "Type", "OCS credit", "Plan", "Active", "Note"],
+                data.rows.map((r) => [
+                    r.id,
+                    r.username,
+                    `${r.firstname || ""} ${r.lastname || ""}`.trim(),
+                    r.email || "",
+                    r.paid_kind,
+                    money(r.credit),
+                    r.idPlanname || r.id_plan,
+                    Number(r.active) === 1 ? "yes" : "no",
+                    r.bss_note || "",
+                ]),
+            )}</div>
         `;
     },
     async products() {
@@ -189,14 +194,8 @@ const views = {
     async resellers() {
         const data = await api("/api/resellers");
         document.getElementById("view").innerHTML = `
-            <form class="form card" onsubmit="return createReseller(event)">
-                <label>Company <input name="company_name" required></label>
-                <label>Username <input name="username"></label>
-                <label>Email <input name="email" type="email"></label>
-                <label>First name <input name="firstname"></label>
-                <label>Wholesale credit <input name="credit" type="number" step="0.01" value="0"></label>
-                <button class="btn" type="submit">Create reseller</button>
-            </form>
+            ${credentialsCard("Reseller")}
+            ${userCreateForm("createReseller", "Create reseller", data, { requireCompany: true, postpaidLocked: true })}
             <div class="card">${table(["ID", "Username", "Company", "Customers", "Downstream wallet", "Own credit"], data.rows.map((r) => [r.id, r.username, r.company_name, r.customers, money(r.customer_wallet), money(r.credit)]))}</div>
         `;
     },
@@ -402,15 +401,156 @@ function table(headers, rows) {
     return `<table><thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${row.map((c) => `<td>${c ?? ""}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
 }
 
-async function createCustomer(event) {
+function options(items, valueKey, labelFn, selected) {
+    return (items || []).map((item) => {
+        const value = item[valueKey];
+        const label = labelFn(item);
+        const sel = String(value) === String(selected) ? " selected" : "";
+        return `<option value="${esc(value)}"${sel}>${esc(label)}</option>`;
+    }).join("");
+}
+
+function randomUsername() {
+    const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+    const buf = new Uint32Array(7);
+    crypto.getRandomValues(buf);
+    let out = "u";
+    for (let i = 0; i < 7; i++) out += chars[buf[i] % chars.length];
+    return out;
+}
+
+function randomPassword() {
+    const chars = "ABCDEFGHJKLMNPQRSTUWXYZabcdefghijkmnpqrstuvwxyz123456789";
+    const buf = new Uint32Array(10);
+    crypto.getRandomValues(buf);
+    let out = "";
+    for (let i = 0; i < 10; i++) out += chars[buf[i] % chars.length];
+    return out;
+}
+
+function fillSecret(button, field) {
+    const input = button.closest("label").querySelector(`input[name="${field}"]`);
+    if (input) input.value = field === "username" ? randomUsername() : randomPassword();
+}
+
+function credentialsCard(kind) {
+    if (!lastCreated || lastCreated.kind !== kind) return "";
+    const creds = lastCreated;
+    lastCreated = null;
+    return `<div class="card credentials">
+        <h3>${esc(kind)} created on the OCS</h3>
+        <p>Username <code>${esc(creds.username)}</code> · Password / SIP secret <code>${esc(creds.password)}</code></p>
+        <p class="muted">MagnusBilling creates a SIP account with this username and password. Copy it now; it is not stored in the BSS.</p>
+    </div>`;
+}
+
+function userCreateForm(handler, submitLabel, data, optionsCfg) {
+    const plans = data.plans || [];
+    const parents = data.parents || [];
+    const defaultPlan = plans[0] ? plans[0].id : "";
+    const parentOpts = options(parents, "id", (p) => `${p.username}${p.company_name ? " — " + p.company_name : ""} (${p.kind})`, 1);
+    const planOpts = options(plans, "id", (p) => p.name, defaultPlan);
+    const typeField = optionsCfg.postpaidLocked
+        ? `<label>Type <select name="typepaid" disabled><option value="1" selected>Postpaid</option></select></label>`
+        : `<label>Type <select name="typepaid"><option value="0">Prepaid</option><option value="1">Postpaid</option></select></label>`;
+    const companyReq = optionsCfg.requireCompany ? " required" : "";
+    return `
+        <form class="form form-create card" onsubmit="return ${handler}(event)">
+            <h3>Account</h3>
+            <label>Username
+                <span class="with-action">
+                    <input name="username" required minlength="4" maxlength="20" placeholder="4-20 chars, no spaces">
+                    <button class="btn ghost" type="button" onclick="fillSecret(this, 'username')">Generate</button>
+                </span>
+            </label>
+            <label>Password
+                <span class="with-action">
+                    <input name="password" required minlength="6" maxlength="100" autocomplete="new-password" placeholder="SIP secret">
+                    <button class="btn ghost" type="button" onclick="fillSecret(this, 'password')">Generate</button>
+                </span>
+            </label>
+            <label>Plan <select name="id_plan" required>${planOpts}</select></label>
+            <label>Parent <select name="id_user">${parentOpts || '<option value="1">Admin</option>'}</select></label>
+            <label>Language <select name="language"><option value="en">English</option><option value="es">Spanish</option><option value="pt_BR">Portuguese</option><option value="fr">French</option><option value="it">Italian</option></select></label>
+            <label>Status <select name="active"><option value="1">Active</option><option value="0">Inactive</option></select></label>
+            ${typeField}
+            <label>Opening credit <input name="credit" type="number" step="0.0001" value="0"></label>
+            <label>Credit limit <input name="creditlimit" type="number" step="1" value="0"></label>
+            <h3>Identity</h3>
+            <label>First name <input name="firstname" required></label>
+            <label>Last name <input name="lastname"></label>
+            <label>Company <input name="company_name"${companyReq}></label>
+            <label>Trade name <input name="commercial_name"></label>
+            <label>Website <input name="company_website"></label>
+            <label>Email <input name="email" type="email" placeholder="unique on the OCS"></label>
+            <label>Email 2 <input name="email2" type="email"></label>
+            <label>Phone <input name="phone"></label>
+            <label>Mobile <input name="mobile"></label>
+            <label>VAT <input name="vat"></label>
+            <label>Document <input name="doc"></label>
+            <h3>Address</h3>
+            <label>Address <input name="address"></label>
+            <label>City <input name="city"></label>
+            <label>Neighborhood <input name="neighborhood"></label>
+            <label>State <input name="state"></label>
+            <label>Country <input name="country" placeholder="e.g. VUT"></label>
+            <label>Zip code <input name="zipcode"></label>
+            <h3>Calling</h3>
+            <label>Local prefix <input name="prefix_local" placeholder="optional dial prefix"></label>
+            <label>Call limit <input name="calllimit" type="number" value="-1" title="-1 is unlimited"></label>
+            <label>SIP account limit <input name="sipaccountlimit" type="number" value="-1"></label>
+            <label>Inbound call limit <input name="inbound_call_limit" type="number" value="-1"></label>
+            <label>CPS limit <input name="cpslimit" type="number" value="-1"></label>
+            <label>Restriction <select name="restriction"><option value="0">None</option><option value="1">Cannot dial</option><option value="2">Cannot receive</option></select></label>
+            <label>Record calls <select name="record_call"><option value="0">No</option><option value="1">Yes</option></select></label>
+            <label class="span">Description <textarea name="description"></textarea></label>
+            <label class="span">BSS note <input name="note"></label>
+            <div class="actions">
+                <button class="btn" type="submit">${esc(submitLabel)}</button>
+                <p class="err form-err"></p>
+            </div>
+        </form>
+    `;
+}
+
+function formObject(form) {
+    const raw = Object.fromEntries(new FormData(form).entries());
+    const ints = ["typepaid", "id_plan", "id_user", "active", "calllimit", "sipaccountlimit", "inbound_call_limit", "cpslimit", "restriction", "record_call", "creditlimit"];
+    const floats = ["credit"];
+    ints.forEach((key) => {
+        if (!(key in raw) || raw[key] === "") {
+            delete raw[key];
+            return;
+        }
+        raw[key] = Number(raw[key]);
+    });
+    floats.forEach((key) => {
+        raw[key] = Number(raw[key] || 0);
+    });
+    Object.keys(raw).forEach((key) => {
+        if (raw[key] === "") delete raw[key];
+    });
+    return raw;
+}
+
+async function submitUser(event, path, kind, viewName) {
     event.preventDefault();
-    const f = Object.fromEntries(new FormData(event.target).entries());
-    f.credit = Number(f.credit || 0);
-    f.creditlimit = Number(f.creditlimit || 0);
-    f.typepaid = Number(f.typepaid);
-    await api("/api/customers", { method: "POST", body: JSON.stringify(f) });
-    show("customers");
+    const err = event.target.querySelector(".form-err");
+    if (err) err.textContent = "";
+    try {
+        const result = await api(path, { method: "POST", body: JSON.stringify(formObject(event.target)) });
+        const creds = result.credentials || {};
+        lastCreated = { kind, username: creds.username || (result.data && result.data.username) || "", password: creds.password || (result.data && result.data.password) || "" };
+        show(viewName);
+    } catch (exc) {
+        if (err) err.textContent = exc.message || "Create failed";
+        else alert(exc.message || "Create failed");
+    }
     return false;
+}
+
+async function createCustomer(event) {
+    return submitUser(event, "/api/customers", "Customer", "customers");
 }
 
 async function createProduct(event) {
@@ -434,12 +574,7 @@ async function createPayment(event) {
 }
 
 async function createReseller(event) {
-    event.preventDefault();
-    const f = Object.fromEntries(new FormData(event.target).entries());
-    f.credit = Number(f.credit || 0);
-    await api("/api/resellers", { method: "POST", body: JSON.stringify(f) });
-    show("resellers");
-    return false;
+    return submitUser(event, "/api/resellers", "Reseller", "resellers");
 }
 
 async function createInvoice(event) {

@@ -693,22 +693,55 @@ class MockOcs:
         return {"success": True}
 
     def create_user(self, data: dict[str, Any]) -> Any:
+        username = str(data.get("username") or f"user{self._next_user}")
+        if any(str(row.get("username")) == username for row in self._users):
+            return {"success": False, "errors": "This username already in use"}
+        if any(data.get("email") and str(row.get("email")) == str(data.get("email")) for row in self._users):
+            return {"success": False, "errors": "This email already in use"}
+        plan_id = int(data.get("id_plan") or 1)
+        group_id = int(data.get("id_group") or config.CLIENT_GROUP_ID)
         item = {
             "id": self._next_user,
-            "username": data.get("username") or f"user{self._next_user}",
+            "username": username,
+            "password": data.get("password", ""),
             "firstname": data.get("firstname", ""),
             "lastname": data.get("lastname", ""),
             "email": data.get("email", ""),
+            "email2": data.get("email2", ""),
             "credit": float(data.get("credit") or 0),
-            "id_group": int(data.get("id_group") or config.CLIENT_GROUP_ID),
-            "idGroupname": "Agent" if int(data.get("id_group") or 3) == 2 else "Client",
-            "id_plan": int(data.get("id_plan") or 1),
-            "idPlanname": next((p["name"] for p in self._plans if p["id"] == int(data.get("id_plan") or 1)), ""),
+            "id_group": group_id,
+            "idGroupname": "Agent" if group_id == 2 else "Client",
+            "id_plan": plan_id,
+            "idPlanname": next((p["name"] for p in self._plans if int(p["id"]) == plan_id), ""),
             "id_user": int(data.get("id_user") or 1),
             "typepaid": int(data.get("typepaid") or 0),
             "active": int(data.get("active") or 1),
             "company_name": data.get("company_name", ""),
+            "commercial_name": data.get("commercial_name", ""),
+            "company_website": data.get("company_website", ""),
+            "address": data.get("address", ""),
+            "city": data.get("city", ""),
+            "neighborhood": data.get("neighborhood", ""),
+            "state": data.get("state", ""),
+            "country": data.get("country", ""),
+            "zipcode": data.get("zipcode", ""),
+            "phone": data.get("phone", ""),
+            "mobile": data.get("mobile", ""),
+            "vat": data.get("vat", ""),
+            "doc": data.get("doc", ""),
+            "description": data.get("description", ""),
+            "prefix_local": data.get("prefix_local", ""),
+            "language": data.get("language", "en"),
             "creditlimit": float(data.get("creditlimit") or 0),
+            "calllimit": int(data.get("calllimit") if data.get("calllimit") not in (None, "") else -1),
+            "sipaccountlimit": int(data.get("sipaccountlimit") if data.get("sipaccountlimit") not in (None, "") else -1),
+            "cpslimit": int(data.get("cpslimit") if data.get("cpslimit") not in (None, "") else -1),
+            "inbound_call_limit": int(
+                data.get("inbound_call_limit") if data.get("inbound_call_limit") not in (None, "") else -1
+            ),
+            "restriction": int(data.get("restriction") or 0),
+            "record_call": int(data.get("record_call") or 0),
+            "callingcard_pin": int(data.get("callingcard_pin") or (100000 + self._next_user)),
         }
         self._next_user += 1
         self._users.append(item)

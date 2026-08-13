@@ -98,8 +98,11 @@ class BssAppTests(unittest.TestCase):
         )
         self.assertEqual(created.status_code, 200, created.text)
         user_id = created.json()["data"]["id"]
-        customers = self.client.get("/api/customers").json()["rows"]
-        self.assertTrue(any(row["username"] == "dina" for row in customers))
+        self.assertEqual(created.json()["credentials"]["username"], "dina")
+        self.assertTrue(created.json()["credentials"]["password"])
+        customers = self.client.get("/api/customers").json()
+        self.assertTrue(customers["plans"])
+        self.assertTrue(any(row["username"] == "dina" for row in customers["rows"]))
         pay = self.client.post(
             "/api/payments",
             json={"ocs_user_id": user_id, "amount": 7.5, "method": "cash", "reference": "R1"},
@@ -110,6 +113,70 @@ class BssAppTests(unittest.TestCase):
         invoice = self.client.post("/api/invoices", json={"ocs_user_id": 21, "period": "2026-08"})
         self.assertEqual(invoice.status_code, 200, invoice.text)
         self.assertGreaterEqual(invoice.json()["amount"], 0)
+
+    def test_create_customer_requires_magnusbilling_user_rules(self):
+        self._login()
+        space = self.client.post("/api/customers", json={"username": "bad name", "firstname": "Bad", "password": "Secret9x"})
+        self.assertEqual(space.status_code, 400, space.text)
+        self.assertIn("space", space.json()["detail"].lower())
+        short = self.client.post("/api/customers", json={"username": "ab", "firstname": "Bad", "password": "Secret9x"})
+        self.assertEqual(short.status_code, 400, short.text)
+        same = self.client.post(
+            "/api/customers",
+            json={"username": "sameuser", "firstname": "Same", "password": "sameuser"},
+        )
+        self.assertEqual(same.status_code, 400, same.text)
+        weak = self.client.post(
+            "/api/customers",
+            json={"username": "weakuser", "firstname": "Weak", "password": "123456"},
+        )
+        self.assertEqual(weak.status_code, 400, weak.text)
+
+    def test_create_customer_sends_full_ocs_profile(self):
+        self._login()
+        created = self.client.post(
+            "/api/customers",
+            json={
+                "username": "portvila",
+                "password": "PvShop#91x",
+                "firstname": "Marie",
+                "lastname": "Kalotiti",
+                "email": "marie@portvila.example",
+                "company_name": "Port Vila Shop",
+                "phone": "67822100",
+                "city": "Port Vila",
+                "country": "VUT",
+                "address": "Kumul Highway",
+                "credit": 12.5,
+                "typepaid": 0,
+                "id_plan": 1,
+                "language": "en",
+                "calllimit": 2,
+                "prefix_local": "678",
+                "description": "Retail prepaid",
+                "note": "Created from BSS",
+            },
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+        body = created.json()["data"]
+        self.assertEqual(body["username"], "portvila")
+        self.assertEqual(body["email"], "marie@portvila.example")
+        self.assertEqual(body["company_name"], "Port Vila Shop")
+        self.assertEqual(body["city"], "Port Vila")
+        self.assertEqual(body["country"], "VUT")
+        self.assertEqual(body["phone"], "67822100")
+        self.assertEqual(body["calllimit"], 2)
+        self.assertEqual(body["prefix_local"], "678")
+        self.assertEqual(body["id_plan"], 1)
+        self.assertEqual(body["id_group"], 3)
+        customers = self.client.get("/api/customers").json()["rows"]
+        row = next(item for item in customers if item["username"] == "portvila")
+        self.assertEqual(row["bss_note"], "Created from BSS")
+        duplicate = self.client.post(
+            "/api/customers",
+            json={"username": "portvila", "firstname": "Marie", "password": "OtherPass9"},
+        )
+        self.assertEqual(duplicate.status_code, 400, duplicate.text)
 
     def test_reseller_and_product_create(self):
         self._login()

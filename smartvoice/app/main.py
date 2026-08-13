@@ -13,6 +13,7 @@ from .reports import REPORTS, bound_dates, csv_text, in_date_range, matches_quer
 from .security import collect_blocked_ips
 from .sip_status import collect_sip_monitor
 from .store import BssStore
+from .users import flatten_ocs_errors, prepare_user_payload
 
 APP_DIR = config.APP_DIR
 _store: BssStore | None = None
@@ -58,14 +59,39 @@ class CustomerIn(BaseModel):
     firstname: str = ""
     lastname: str = ""
     email: str = ""
+    email2: str = ""
     company_name: str = ""
+    commercial_name: str = ""
+    company_website: str = ""
+    address: str = ""
+    city: str = ""
+    neighborhood: str = ""
+    state: str = ""
+    country: str = ""
+    zipcode: str = ""
+    phone: str = ""
+    mobile: str = ""
+    vat: str = ""
+    doc: str = ""
+    description: str = ""
+    prefix_local: str = ""
+    language: str = "en"
     credit: float = 0
-    creditlimit: float = 0
+    creditlimit: int = 0
     typepaid: int = 0
     id_plan: int | None = None
+    id_offer: int | None = None
     id_user: int = 1
-    note: str = ""
     active: int = 1
+    calllimit: int = -1
+    sipaccountlimit: int = -1
+    cpslimit: int = -1
+    inbound_call_limit: int = -1
+    restriction: int = 0
+    record_call: int = 0
+    callingcard_pin: int | None = None
+    credit_notification: int = 10
+    note: str = ""
 
 
 class ProductIn(BaseModel):
@@ -130,6 +156,62 @@ def _user_kind(row: dict[str, Any]) -> str:
 
 def _paid_kind(row: dict[str, Any]) -> str:
     return "postpaid" if int(row.get("typepaid") or 0) == 1 else "prepaid"
+
+
+def _default_plan_id() -> int | None:
+    plans = _rows(ocs().read("plan", page=1, limit=200))
+    if not plans:
+        return None
+    signup = next((row for row in plans if int(row.get("signup") or 0) == 1), None)
+    chosen = signup or plans[0]
+    try:
+        return int(chosen["id"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _user_parents(users: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    parents = []
+    for row in users:
+        if _user_kind(row) not in {"admin", "reseller"}:
+            continue
+        parents.append(
+            {
+                "id": row.get("id"),
+                "username": row.get("username"),
+                "company_name": row.get("company_name") or "",
+                "kind": _user_kind(row),
+            }
+        )
+    return parents
+
+
+def _create_ocs_user(
+    payload: CustomerIn,
+    *,
+    id_group: int,
+    force_typepaid: int | None = None,
+    fallback_error: str,
+) -> dict[str, Any]:
+    data, note, credentials = prepare_user_payload(
+        payload,
+        id_group=id_group,
+        default_plan_id=_default_plan_id(),
+        force_typepaid=force_typepaid,
+    )
+    try:
+        result = ocs().create_user(data)
+    except OcsError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    if not isinstance(result, dict):
+        return {"result": result, "credentials": credentials}
+    if result.get("success") is False:
+        raise HTTPException(status_code=400, detail=flatten_ocs_errors(result.get("errors"), fallback_error))
+    created = result.get("data") if isinstance(result.get("data"), dict) else None
+    if created and note:
+        store().set_note(int(created["id"]), note)
+    result["credentials"] = credentials
+    return result
 
 
 @app.get("/api/health")
@@ -209,26 +291,26 @@ def dashboard(user: str = Depends(current_user)) -> dict[str, Any]:
 
 @app.get("/api/customers")
 def customers(user: str = Depends(current_user)) -> dict[str, Any]:
-    rows = [row for row in _rows(ocs().read("user", page=1, limit=500)) if _user_kind(row) == "customer"]
+    users = _rows(ocs().read("user", page=1, limit=500))
+    rows = [row for row in users if _user_kind(row) == "customer"]
     for row in rows:
         row["bss_note"] = store().get_note(int(row["id"]))
         row["paid_kind"] = _paid_kind(row)
-    return {"rows": rows, "count": len(rows)}
+    return {
+        "rows": rows,
+        "count": len(rows),
+        "plans": _rows(ocs().read("plan", page=1, limit=200)),
+        "parents": _user_parents(users),
+    }
 
 
 @app.post("/api/customers")
 def create_customer(payload: CustomerIn, user: str = Depends(current_user)) -> dict[str, Any]:
-    data = payload.model_dump(exclude_none=True)
-    note = data.pop("note", "")
-    data["id_group"] = config.CLIENT_GROUP_ID
-    data["active"] = payload.active
-    result = ocs().create_user(data)
-    created = result.get("data") if isinstance(result, dict) else None
-    if created and note:
-        store().set_note(int(created["id"]), note)
-    if isinstance(result, dict) and result.get("success") is False:
-        raise HTTPException(status_code=400, detail=result.get("errors") or "OCS rejected the customer")
-    return result if isinstance(result, dict) else {"result": result}
+    return _create_ocs_user(
+        payload,
+        id_group=config.CLIENT_GROUP_ID,
+        fallback_error="OCS rejected the customer",
+    )
 
 
 @app.post("/api/customers/{ocs_user_id}/note")
@@ -246,22 +328,22 @@ def resellers(user: str = Depends(current_user)) -> dict[str, Any]:
         agent["customers"] = len(children)
         agent["customer_wallet"] = round(sum(float(row.get("credit") or 0) for row in children), 4)
         agent["bss_note"] = store().get_note(int(agent["id"]))
-    return {"rows": agents, "count": len(agents)}
+    return {
+        "rows": agents,
+        "count": len(agents),
+        "plans": _rows(ocs().read("plan", page=1, limit=200)),
+        "parents": _user_parents(users),
+    }
 
 
 @app.post("/api/resellers")
 def create_reseller(payload: CustomerIn, user: str = Depends(current_user)) -> dict[str, Any]:
-    data = payload.model_dump(exclude_none=True)
-    note = data.pop("note", "")
-    data["id_group"] = config.RESELLER_GROUP_ID
-    data["typepaid"] = 1
-    result = ocs().create_user(data)
-    created = result.get("data") if isinstance(result, dict) else None
-    if created and note:
-        store().set_note(int(created["id"]), note)
-    if isinstance(result, dict) and result.get("success") is False:
-        raise HTTPException(status_code=400, detail=result.get("errors") or "OCS rejected the reseller")
-    return result if isinstance(result, dict) else {"result": result}
+    return _create_ocs_user(
+        payload,
+        id_group=config.RESELLER_GROUP_ID,
+        force_typepaid=1,
+        fallback_error="OCS rejected the reseller",
+    )
 
 
 @app.get("/api/products")
