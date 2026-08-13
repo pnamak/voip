@@ -119,7 +119,7 @@ def branding_tarball() -> bytes:
 def cloud_init(root_password: str, admin_password: str, branding_gz: bytes) -> str:
     bootstrap = (REPO_ROOT / "deploy/digitalocean/bootstrap.sh").read_text(encoding="utf-8")
     branding_b64 = base64.b64encode(branding_gz).decode()
-    creds = f"""SmartVoIP credentials — change these after first login
+    creds = f"""SmartVoIP credentials - change these after first login
 Panel URL: http://SERVER_IP/
 Panel path: /mbilling/
 Username: root
@@ -128,6 +128,9 @@ SSH user: root
 SSH password: {root_password}
 Engine: MagnusBilling 8
 """
+    branding_wrapped = "\n".join(
+        branding_b64[i : i + 76] for i in range(0, len(branding_b64), 76)
+    )
     return f"""#cloud-config
 hostname: smartvoip-billing
 manage_etc_hosts: true
@@ -142,7 +145,8 @@ write_files:
   - path: /root/smartvoip-branding.tar.gz
     encoding: b64
     permissions: '0600'
-    content: {branding_b64}
+    content: |
+{chr(10).join('      ' + line for line in branding_wrapped.splitlines())}
   - path: /root/smartvoip-credentials.txt
     permissions: '0600'
     content: |

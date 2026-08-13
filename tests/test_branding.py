@@ -68,7 +68,23 @@ class BrandingTests(unittest.TestCase):
                 tracked.append(str(path.relative_to(ROOT)))
         self.assertEqual(tracked, [])
 
-    def test_branding_tarball_includes_overlay(self):
+    def test_cloud_init_is_ascii_yaml(self):
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "deploy", ROOT / "deploy/digitalocean/deploy.py"
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        text = module.cloud_init(
+            "Aa1Bb2Cc3Dd4Ee5Ff6Gg7Hh8",
+            "Aa1Bb2Cc3Dd4Ee5Ff6Gg7Hh8",
+            module.branding_tarball(),
+        )
+        text.encode("ascii")
+        self.assertTrue(text.startswith("#cloud-config"))
+        self.assertIn("encoding: b64", text)
+        self.assertIn("smartvoip-bootstrap.service", text)
         import importlib.util
 
         spec = importlib.util.spec_from_file_location(
