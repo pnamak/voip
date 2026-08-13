@@ -13,7 +13,11 @@ const BASE = window.location.pathname.indexOf("/smartvoice") === 0 ? "/smartvoic
 async function api(path, options) {
     const response = await fetch(BASE + path, Object.assign({ credentials: "same-origin", headers: { "Content-Type": "application/json" } }, options));
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.detail ? JSON.stringify(data.detail) : response.statusText);
+    if (!response.ok) {
+        const detail = data.detail;
+        const message = typeof detail === "string" ? detail : (detail ? JSON.stringify(detail) : response.statusText);
+        throw new Error(message);
+    }
     return data;
 }
 
@@ -30,13 +34,14 @@ function setOcsPill(health) {
 
 async function login(event) {
     event.preventDefault();
-    const form = event.target;
+    const username = document.getElementById("username").value.trim();
+    const password = document.getElementById("password").value;
     document.getElementById("login-err").textContent = "";
     try {
-        await api("/api/login", { method: "POST", body: JSON.stringify({ username: form.username.value, password: form.password.value }) });
+        await api("/api/login", { method: "POST", body: JSON.stringify({ username: username, password: password }) });
         await boot();
     } catch (err) {
-        document.getElementById("login-err").textContent = "Sign-in failed";
+        document.getElementById("login-err").textContent = err.message || "Sign-in failed";
     }
     return false;
 }
@@ -53,19 +58,23 @@ async function boot() {
         document.getElementById("login").classList.add("hidden");
         document.getElementById("app").classList.remove("hidden");
         setOcsPill(session.ocs);
-        show("dashboard");
+        await show("dashboard");
     } catch (err) {
         document.getElementById("app").classList.add("hidden");
         document.getElementById("login").classList.remove("hidden");
+        const box = document.getElementById("login-err");
+        if (box && err && err.message && err.message !== "Sign in required") {
+            box.textContent = err.message;
+        }
     }
 }
 
-function show(name) {
+async function show(name) {
     document.querySelectorAll(".nav button").forEach((btn) => btn.classList.toggle("active", btn.dataset.view === name));
     document.getElementById("title").textContent = titles[name][0];
     document.getElementById("subtitle").textContent = titles[name][1];
     const render = views[name];
-    if (render) render();
+    if (render) await render();
 }
 
 document.querySelectorAll(".nav button").forEach((btn) => btn.addEventListener("click", () => show(btn.dataset.view)));

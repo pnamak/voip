@@ -140,7 +140,14 @@ def login(payload: LoginIn, response: Response) -> dict[str, Any]:
     if not store().authenticate(payload.username, payload.password):
         raise HTTPException(status_code=401, detail="Invalid username or password")
     token = store().create_session(payload.username)
-    response.set_cookie(_cookie_name(), token, httponly=True, samesite="lax", max_age=12 * 3600)
+    response.set_cookie(
+        _cookie_name(),
+        token,
+        httponly=True,
+        samesite="lax",
+        max_age=12 * 3600,
+        path="/",
+    )
     return {"ok": True, "username": payload.username}
 
 

@@ -76,6 +76,11 @@ class BssAppTests(unittest.TestCase):
         response = self.client.post("/api/login", json={"username": "admin", "password": "testpass"})
         self.assertEqual(response.status_code, 200, response.text)
 
+    def test_login_overlay_can_hide(self):
+        css = (ROOT / "smartvoice/app/static/smartvoice.css").read_text(encoding="utf-8")
+        self.assertIn(".login.hidden", css)
+        self.assertIn("display: none !important", css)
+
     def test_health_reports_bss_and_ocs(self):
         data = self.client.get("/api/health").json()
         self.assertEqual(data["role"], "bss")

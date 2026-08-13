@@ -92,10 +92,16 @@ class BssStore:
             row = conn.execute(
                 "SELECT username FROM operators WHERE username = ?", (config.ADMIN_USER,)
             ).fetchone()
+            password_hash = _hash_password(config.admin_password())
             if row is None:
                 conn.execute(
                     "INSERT INTO operators(username, password_hash, created_at) VALUES (?, ?, ?)",
-                    (config.ADMIN_USER, _hash_password(config.admin_password()), time.strftime("%Y-%m-%d %H:%M:%S")),
+                    (config.ADMIN_USER, password_hash, time.strftime("%Y-%m-%d %H:%M:%S")),
+                )
+            else:
+                conn.execute(
+                    "UPDATE operators SET password_hash = ? WHERE username = ?",
+                    (password_hash, config.ADMIN_USER),
                 )
             if conn.execute("SELECT COUNT(*) AS n FROM products").fetchone()["n"] == 0:
                 conn.executemany(
