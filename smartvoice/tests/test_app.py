@@ -175,6 +175,16 @@ class SipStatusParseTests(unittest.TestCase):
         self.assertEqual(endpoints["test01"]["state"], "Not in use")
         self.assertEqual(endpoints["test02"]["state"], "Unavailable")
         self.assertEqual(endpoints["test01"]["channels"], 0)
+        from smartvoice.app.sip_status import ami_command_text
+
+        ami_text = ami_command_text(
+            "Response: Success\r\nMessage: Command output follows\r\n"
+            "Output: \r\n"
+            "Output:   Contact:  test01/sip:test01@10.1.2.3:5060 fac Avail 12.0\r\n"
+            "Output: \r\n\r\n"
+        )
+        parsed = parse_pjsip_contacts(ami_text)
+        self.assertEqual(parsed["test01"]["contact"], "10.1.2.3:5060")
 
 
 if __name__ == "__main__":

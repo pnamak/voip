@@ -93,6 +93,20 @@ def parse_pjsip_endpoints(output: str) -> dict[str, dict[str, Any]]:
     return endpoints
 
 
+def ami_command_text(packet: str) -> str:
+    """Turn an AMI Command response into the CLI text Asterisk printed."""
+    outputs: list[str] = []
+    for line in (packet or "").splitlines():
+        if line.startswith("Output:"):
+            outputs.append(line.split(":", 1)[1].lstrip())
+    if outputs:
+        return "\n".join(outputs)
+    if "--END COMMAND--" in (packet or ""):
+        body = packet.split("\r\n\r\n", 1)[-1]
+        return body.replace("--END COMMAND--", "")
+    return packet or ""
+
+
 class AsteriskAmi:
     """Minimal AMI client for PJSIP show commands."""
 
@@ -115,9 +129,9 @@ class AsteriskAmi:
             sock.settimeout(self.timeout)
             self._login(sock)
             self._send(sock, {"Action": "Command", "Command": cmd, "ActionID": "sv1"})
-            body = self._read_until(sock, "--END COMMAND--")
+            packet = self._read_packet(sock)
             self._send(sock, {"Action": "Logoff"})
-        return body
+        return ami_command_text(packet)
 
     def contacts(self) -> dict[str, dict[str, Any]]:
         return parse_pjsip_contacts(self.command("pjsip show contacts"))
@@ -125,18 +139,32 @@ class AsteriskAmi:
     def endpoints(self) -> dict[str, dict[str, Any]]:
         return parse_pjsip_endpoints(self.command("pjsip show endpoints"))
 
+    def snapshot(self) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
+        with socket.create_connection((self.host, self.port), timeout=self.timeout) as sock:
+            sock.settimeout(self.timeout)
+            self._login(sock)
+            self._send(sock, {"Action": "Command", "Command": "pjsip show contacts", "ActionID": "sv1"})
+            contacts = parse_pjsip_contacts(ami_command_text(self._read_packet(sock)))
+            self._send(sock, {"Action": "Command", "Command": "pjsip show endpoints", "ActionID": "sv2"})
+            endpoints = parse_pjsip_endpoints(ami_command_text(self._read_packet(sock)))
+            self._send(sock, {"Action": "Logoff"})
+        return contacts, endpoints
+
     def _login(self, sock: socket.socket) -> None:
         banner = self._read_until(sock, "\r\n")
         if "Asterisk Call Manager" not in banner:
             raise RuntimeError("Unexpected AMI banner")
         self._send(sock, {"Action": "Login", "Username": self.username, "Secret": self.secret, "Events": "off"})
-        reply = self._read_until(sock, "\r\n\r\n")
+        reply = self._read_packet(sock)
         if "Success" not in reply:
             raise RuntimeError("AMI login failed")
 
     def _send(self, sock: socket.socket, fields: dict[str, str]) -> None:
         payload = "".join(f"{key}: {value}\r\n" for key, value in fields.items()) + "\r\n"
         sock.sendall(payload.encode("utf-8"))
+
+    def _read_packet(self, sock: socket.socket) -> str:
+        return self._read_until(sock, "\r\n\r\n")
 
     def _read_until(self, sock: socket.socket, marker: str) -> str:
         chunks = b""
@@ -265,8 +293,7 @@ def collect_sip_monitor(ocs: Any) -> dict[str, Any]:
     ami = get_ami()
     if ami is not None:
         try:
-            contacts = ami.contacts()
-            endpoints = ami.endpoints()
+            contacts, endpoints = ami.snapshot()
             ami_ok = True
             ami_detail = f"Asterisk AMI {config.AMI_HOST}:{config.AMI_PORT}"
         except Exception as exc:  # noqa: BLE001
