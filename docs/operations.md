@@ -20,11 +20,28 @@ On the droplet, `/root/smartvoip-credentials.txt` holds the generated
 panel and SSH passwords. Locally they are also in
 `.secrets/smartvoip-credentials.txt`, which must stay untracked.
 
+## SmartVoice BSS
+
+Install or refresh the BSS on the droplet:
+
+```bash
+sudo ./deploy/smartvoice/install.sh
+```
+
+The service listens on `127.0.0.1:8088` and Apache publishes it at
+`/smartvoice/`. Credentials: `/root/smartvoice-credentials.txt`.
+
+```bash
+curl -fsS http://DROPLET_IP/smartvoice/api/health
+systemctl status smartvoice
+```
+
 ## Health checks
 
 ```bash
 curl -fsS http://DROPLET_IP/install-status.json
 curl -I http://DROPLET_IP/mbilling/
+curl -fsS http://DROPLET_IP/smartvoice/api/health
 ssh -i .secrets/smartvoip_ed25519 root@DROPLET_IP 'asterisk -rx "core show version"'
 ```
 

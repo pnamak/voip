@@ -1,32 +1,31 @@
-# SmartVoIP Billing Platform
+# SmartVoIP / SmartVoice platform
 
-SmartVoIP is a branded [MagnusBilling 8](https://github.com/magnussolution/magnusbilling)
-billing, routing, and management platform for VoIP providers, call shops, and
-telephony services.
+SmartVoice is the **Business Support System (BSS)** for customers, products,
+payments, invoices, and resellers. [MagnusBilling 8](https://github.com/magnussolution/magnusbilling)
+is the **Online Charging System (OCS)**: it rates and charges calls in real
+time so prepaid balances cannot go negative and postpaid usage stays precise.
 
-The MagnusBilling engine stays upstream. This repository adds SmartVoIP
-branding, a landing page, and DigitalOcean automation that provisions a
-Debian droplet, installs MagnusBilling non-interactively, and applies the
-brand overlay.
+This repository also brands the MagnusBilling panel as SmartVoIP and deploys
+it to DigitalOcean.
 
 ## What you get
 
-- prepaid and postpaid customer billing
+- **SmartVoice BSS** at `/smartvoice/` — operator CRM, catalog, payments, resellers, invoices
+- **MagnusBilling OCS** at `/mbilling/` — prepaid/postpaid wallets, SIP, CDRs, live charging
 - rates, trunks, providers, and call routing
 - SIP/PJSIP accounts, DIDs, IVRs, queues, callbacks, and calling cards
-- CDRs, invoices, refills, vouchers, and reseller administration
-- call-shop workflows
-- a SmartVoIP login panel, logo, and landing page on top of MagnusBilling 8
 - Asterisk 20 / PJSIP, Apache, PHP, MariaDB, Fail2ban, and host firewall
 
 ## Architecture
 
 ```text
 Browser
-  -> SmartVoIP landing page
-  -> MagnusBilling web panel (Ext JS + Yii)
-  -> MariaDB
-  -> Asterisk 20 / PJSIP  -> carriers and SIP devices
+  -> SmartVoice BSS (/smartvoice/)
+        | HMAC API
+        v
+  MagnusBilling OCS (/mbilling/)
+        -> MariaDB
+        -> Asterisk 20 / PJSIP  -> carriers and SIP devices
 ```
 
 ## DigitalOcean deploy
@@ -73,12 +72,12 @@ Destroy:
 ### First login
 
 1. Open `http://DROPLET_IP/`
-2. Wait until the status chip says **Platform ready**
-3. Open the billing panel at `/mbilling/`
-4. Sign in as `root` with the generated password
-5. Change that password immediately
+2. Open **SmartVoice BSS** at `/smartvoice/` for customers, products, payments, and resellers
+3. Open **MagnusBilling OCS** at `/mbilling/` for live charging, SIP, and CDRs
+4. Change generated passwords immediately
 
-Default MagnusBilling `root` / `magnus` is replaced during branding.
+See `smartvoice/README.md` for local BSS development. Install the BSS on an
+existing droplet with `deploy/smartvoice/install.sh`.
 
 ## Branding overlay
 

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SmartVoice BSS</title>
+    <link rel="icon" href="static/logo.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="static/smartvoice.css">
+</head>
+<body>
+    <div id="login" class="login">
+        <form class="login-card" onsubmit="return login(event)">
+            <img src="static/logo.svg" alt="" width="48" height="48">
+            <h1>SmartVoice</h1>
+            <p class="muted">Business Support System. MagnusBilling remains the real-time OCS.</p>
+            <label>Username <input name="username" value="admin" autocomplete="username"></label>
+            <label>Password <input name="password" type="password" autocomplete="current-password"></label>
+            <p class="err" id="login-err"></p>
+            <button class="btn" type="submit">Sign in</button>
+        </form>
+    </div>
+    <div id="app" class="app hidden">
+        <aside class="side">
+            <div class="brand"><img src="static/logo.svg" alt=""><span>SmartVoice</span></div>
+            <p>BSS for customers, products, payments, and resellers. OCS by MagnusBilling.</p>
+            <nav class="nav">
+                <button data-view="dashboard" class="active">Dashboard</button>
+                <button data-view="customers">Customers</button>
+                <button data-view="products">Products</button>
+                <button data-view="payments">Payments</button>
+                <button data-view="resellers">Resellers</button>
+                <button data-view="usage">OCS usage</button>
+                <button data-view="invoices">Invoices</button>
+            </nav>
+        </aside>
+        <main class="main">
+            <div class="top">
+                <div>
+                    <h2 id="title">Dashboard</h2>
+                    <div class="muted" id="subtitle">Operator console</div>
+                </div>
+                <div>
+                    <span class="pill" id="ocs-pill">OCS</span>
+                    <button class="btn ghost" onclick="logout()">Sign out</button>
+                </div>
+            </div>
+            <section id="view"></section>
+        </main>
+    </div>
+    <script src="static/app.js"></script>
+</body>
+</html>
