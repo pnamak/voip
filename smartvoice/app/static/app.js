@@ -23,12 +23,14 @@ const titles = {
     resellers: ["Resellers", "Agent accounts and downstream customer wallets"],
     usage: ["OCS usage", "Live calls and CDRs from the online charging engine"],
     invoices: ["Invoices", "BSS invoices rolled up from OCS call charges"],
+    "blocked-ip": ["Blocked IP", "Fail2ban and MagnusBilling firewall blocks, with country and reason"],
 };
 REPORT_MENU.forEach(([slug, title, subtitle]) => {
     titles[slug] = [title, subtitle];
 });
 
 const reportState = Object.fromEntries(REPORT_MENU.map(([slug]) => [slug, ""]));
+reportState["blocked-ip"] = "";
 
 const BASE = window.location.pathname.indexOf("/smartvoice") === 0 ? "/smartvoice" : "";
 
@@ -239,6 +241,43 @@ const views = {
             <div class="card">${table(["ID", "User", "Period", "Amount", "Status"], data.rows.map((r) => [r.id, r.username, r.period, money(r.amount), r.status]))}</div>
         `;
     },
+    async ["blocked-ip"]() {
+        const q = reportState["blocked-ip"] || "";
+        const data = await api("/api/security/blocked-ip" + (q ? `?${q}` : ""));
+        setOcsPill(data.ocs);
+        const counts = data.counts || {};
+        const countryCards = (data.by_country || []).slice(0, 4).map((item) => `<div class="card"><h3>${esc(item.label)}</h3><div class="n">${item.count}</div></div>`).join("");
+        document.getElementById("view").innerHTML = `
+            <form class="form card" onsubmit="return applyBlockedFilter(event)">
+                <label>Search <input name="q" value="${esc(new URLSearchParams(q).get("q") || "")}" placeholder="IP, country, reason"></label>
+                <button class="btn" type="submit">Filter</button>
+            </form>
+            <div class="grid">
+                <div class="card"><h3>Blocked IPs</h3><div class="n">${counts.total || 0}</div></div>
+                <div class="card"><h3>Temporary</h3><div class="n">${counts.temporary || 0}</div></div>
+                <div class="card"><h3>Permanent</h3><div class="n">${counts.permanent || 0}</div></div>
+                ${countryCards}
+            </div>
+            <div class="card">
+                <div class="toolbar">
+                    <h3>Blocked IP</h3>
+                    <span class="muted">Country and Fail2ban reason from the MagnusBilling firewall</span>
+                </div>
+                ${table(
+                    ["IP", "Country", "Reason for block", "Jail", "Action", "Date", "Server"],
+                    (data.rows || []).map((r) => [
+                        `<strong>${esc(r.ip)}</strong>`,
+                        `${esc(r.country)}${r.country_code ? ` (${esc(r.country_code)})` : ""}`,
+                        esc(r.reason),
+                        esc(r.jail),
+                        `<span class="tag ${r.action_id === 1 ? "post" : ""}">${esc(r.action)}</span>`,
+                        esc(r.date),
+                        esc(r.server),
+                    ]),
+                )}
+            </div>
+        `;
+    },
 };
 
 REPORT_MENU.forEach(([slug]) => {
@@ -316,6 +355,14 @@ function applyReport(event, name) {
     });
     reportState[name] = params.toString();
     show(name);
+    return false;
+}
+
+function applyBlockedFilter(event) {
+    event.preventDefault();
+    const value = String(new FormData(event.target).get("q") || "").trim();
+    reportState["blocked-ip"] = value ? new URLSearchParams({ q: value }).toString() : "";
+    show("blocked-ip");
     return false;
 }
 

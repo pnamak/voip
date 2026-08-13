@@ -194,6 +194,22 @@ class BssAppTests(unittest.TestCase):
         empty_ok = self.client.get("/api/reports/summary-per-trunk")
         self.assertEqual(empty_ok.status_code, 200, empty_ok.text)
 
+    def test_blocked_ip_security_view(self):
+        self.assertEqual(self.client.get("/api/security/blocked-ip").status_code, 401)
+        self._login()
+        data = self.client.get("/api/security/blocked-ip").json()
+        self.assertEqual(data["count"], 2)
+        by_ip = {row["ip"]: row for row in data["rows"]}
+        self.assertIn("203.0.113.50", by_ip)
+        self.assertEqual(by_ip["203.0.113.50"]["country"], "Germany")
+        self.assertIn("SIP", by_ip["203.0.113.50"]["reason"])
+        self.assertEqual(by_ip["198.51.100.10"]["country"], "China")
+        self.assertIn("billing panel login", by_ip["198.51.100.10"]["reason"])
+        self.assertNotIn("192.0.2.8", by_ip)
+        html = (ROOT / "smartvoice/app/static/index.html").read_text(encoding="utf-8")
+        self.assertIn("Security", html)
+        self.assertIn('data-view="blocked-ip"', html)
+
 
 class SipStatusParseTests(unittest.TestCase):
     def test_classify_and_parse_pjsip(self):

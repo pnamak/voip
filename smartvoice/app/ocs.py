@@ -545,6 +545,38 @@ class MockOcs:
                 "sessionbill": 0,
             }
         ]
+        self._firewall = [
+            {
+                "id": 1,
+                "date": "2026-08-13 07:36:02",
+                "ip": "203.0.113.50",
+                "action": 0,
+                "description": "Master",
+                "jail": "asterisk-iptables",
+                "id_server": 1,
+                "idServername": "Master",
+            },
+            {
+                "id": 2,
+                "date": "2026-08-13 07:40:11",
+                "ip": "198.51.100.10",
+                "action": 1,
+                "description": "Master",
+                "jail": "mbilling_login",
+                "id_server": 1,
+                "idServername": "Master",
+            },
+            {
+                "id": 3,
+                "date": "2026-08-13 07:41:00",
+                "ip": "192.0.2.8",
+                "action": 5,
+                "description": "Master",
+                "jail": "IgnoreIP",
+                "id_server": 1,
+                "idServername": "Master",
+            },
+        ]
         self._next_user = 30
         self._next_plan = 3
         self._next_refill = 2
@@ -611,6 +643,7 @@ class MockOcs:
             "callSummaryPerUser": self._summary_user,
             "callSummaryPerTrunk": self._summary_trunk,
             "callSummaryMonthDid": self._summary_month_did,
+            "firewall": self._firewall,
         }.get(module, [])
         rows = self._apply_filter(list(table))
         start = 0 if page <= 1 else (page - 1) * limit

@@ -57,6 +57,12 @@ CREATE TABLE IF NOT EXISTS payments (
     ocs_refill_id INTEGER,
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS geo_cache (
+    ip TEXT PRIMARY KEY,
+    country TEXT NOT NULL,
+    country_code TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 """
 
 
@@ -255,3 +261,21 @@ class BssStore:
     def mark_invoice(self, invoice_id: int, status: str) -> None:
         with self.connect() as conn:
             conn.execute("UPDATE invoices SET status = ? WHERE id = ?", (status, invoice_id))
+
+    def get_geo(self, ip: str) -> dict[str, str] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT country, country_code FROM geo_cache WHERE ip = ?", (ip,)
+            ).fetchone()
+        if not row:
+            return None
+        return {"country": row["country"], "country_code": row["country_code"]}
+
+    def set_geo(self, ip: str, country: str, country_code: str) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """INSERT INTO geo_cache(ip, country, country_code, updated_at) VALUES (?, ?, ?, ?)
+                   ON CONFLICT(ip) DO UPDATE SET country = excluded.country,
+                     country_code = excluded.country_code, updated_at = excluded.updated_at""",
+                (ip, country, country_code, time.strftime("%Y-%m-%d %H:%M:%S")),
+            )

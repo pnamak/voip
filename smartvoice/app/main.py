@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from . import config
 from .ocs import MagnusBillingOcs, MockOcs, OcsError, get_ocs
 from .reports import REPORTS, bound_dates, csv_text, in_date_range, matches_query, menu_items, normalize_row, summarize
+from .security import collect_blocked_ips
 from .sip_status import collect_sip_monitor
 from .store import BssStore
 
@@ -435,6 +436,13 @@ def report_view(
     limit: int = Query(200, ge=1, le=1000),
 ) -> dict[str, Any]:
     return _build_report(slug, q, date_from, date_to, page, limit)
+
+
+@app.get("/api/security/blocked-ip")
+def blocked_ip(user: str = Depends(current_user), q: str = "") -> dict[str, Any]:
+    result = collect_blocked_ips(ocs(), store(), q=q)
+    result["ocs"] = ocs().health()
+    return result
 
 
 @app.get("/api/sip-devices")
