@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SmartVoIP Billing Platform</title>
+    <link rel="icon" href="/branding/logo.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/branding/smartvoip.css">
+</head>
+<body>
+    <main class="sv-shell">
+        <nav class="sv-nav">
+            <div class="sv-brand">
+                <img src="/branding/logo.svg" alt="SmartVoIP">
+                <span>SmartVoIP</span>
+            </div>
+            <div class="sv-status" id="sv-status">Checking platform status…</div>
+        </nav>
+        <section class="sv-hero">
+            <h1>Billing, routing, and management for telephony operators.</h1>
+            <p>
+                SmartVoice is the Business Support System for customers, products,
+                payments, and resellers. MagnusBilling 8 is the Online Charging
+                System: it tracks and charges calls in real time so prepaid wallets
+                cannot go negative and postpaid usage stays precise.
+            </p>
+            <div class="sv-actions">
+                <a class="sv-btn sv-btn-primary" href="/smartvoice/">Open SmartVoice BSS</a>
+                <a class="sv-btn sv-btn-ghost" href="/mbilling/">MagnusBilling OCS panel</a>
+            </div>
+        </section>
+        <section class="sv-grid">
+            <article class="sv-card">
+                <h2>SmartVoice BSS</h2>
+                <p>Customers, products, payments, invoices, and reseller management in one operator console.</p>
+            </article>
+            <article class="sv-card">
+                <h2>MagnusBilling OCS</h2>
+                <p>Real-time call charging, SIP routing, CDRs, and prepaid/postpaid wallets.</p>
+            </article>
+            <article class="sv-card">
+                <h2>Call shops</h2>
+                <p>Booth operation, calling cards, callbacks, and per-call charging.</p>
+            </article>
+            <article class="sv-card">
+                <h2>Operations</h2>
+                <p>CDRs, alarms, reseller administration, APIs, and scheduled jobs.</p>
+            </article>
+        </section>
+        <p class="sv-foot">
+            Powered by <a href="https://github.com/magnussolution/magnusbilling">MagnusBilling 8</a>
+            under LGPL-3.0. Change the default administrator password immediately after first login.
+        </p>
+    </main>
+    <script>
+        fetch('/install-status.json', { cache: 'no-store' })
+            .then(function (r) { return r.ok ? r.json() : { status: 'unknown' }; })
+            .then(function (d) {
+                var el = document.getElementById('sv-status');
+                var status = (d && d.status) || 'unknown';
+                if (status === 'ready') el.textContent = 'Platform ready';
+                else if (status === 'installing') el.textContent = 'Installing MagnusBilling… this can take 20–40 minutes';
+                else if (status === 'failed') el.textContent = 'Install failed — check /var/log/smartvoip-bootstrap.log';
+                else el.textContent = 'Status: ' + status;
+            })
+            .catch(function () {
+                document.getElementById('sv-status').textContent = 'Billing panel available at /mbilling/';
+            });
+    </script>
+</body>
+</html>

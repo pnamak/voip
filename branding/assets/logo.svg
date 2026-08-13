@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="SmartVoIP">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#14B8A6"/>
+      <stop offset="100%" stop-color="#0B6E99"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="#07111f"/>
+  <circle cx="256" cy="256" r="168" fill="none" stroke="url(#g)" stroke-width="28"/>
+  <path d="M168 252c28-64 148-64 176 0" fill="none" stroke="#14B8A6" stroke-width="22" stroke-linecap="round"/>
+  <path d="M196 292c18-36 102-36 120 0" fill="none" stroke="#5eead4" stroke-width="18" stroke-linecap="round"/>
+  <circle cx="256" cy="334" r="16" fill="#F59E0B"/>
+  <rect x="236" y="118" width="40" height="56" rx="12" fill="#14B8A6"/>
+</svg>

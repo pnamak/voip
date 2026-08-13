@@ -1,0 +1,129 @@
+:root {
+    --sv-bg: #07111f;
+    --sv-panel: #0e1a2b;
+    --sv-primary: #0b6e99;
+    --sv-accent: #14b8a6;
+    --sv-text: #e8eef5;
+    --sv-muted: #9bb0c5;
+    --sv-gold: #f59e0b;
+}
+
+html,
+body {
+    margin: 0;
+    min-height: 100%;
+    background: radial-gradient(1200px 600px at 10% -10%, rgba(20, 184, 166, 0.18), transparent 50%),
+        radial-gradient(900px 500px at 100% 0%, rgba(11, 110, 153, 0.28), transparent 45%),
+        var(--sv-bg);
+    color: var(--sv-text);
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+}
+
+.sv-shell {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 48px 24px 80px;
+}
+
+.sv-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.sv-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    font-size: 22px;
+}
+
+.sv-brand img {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+}
+
+.sv-status {
+    font-size: 13px;
+    color: var(--sv-muted);
+    border: 1px solid rgba(20, 184, 166, 0.35);
+    padding: 8px 12px;
+    border-radius: 999px;
+}
+
+.sv-hero h1 {
+    font-size: clamp(32px, 5vw, 52px);
+    line-height: 1.1;
+    margin: 56px 0 16px;
+}
+
+.sv-hero p {
+    max-width: 640px;
+    font-size: 18px;
+    color: var(--sv-muted);
+}
+
+.sv-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 32px 0 48px;
+}
+
+.sv-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 14px 22px;
+    border-radius: 12px;
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.sv-btn-primary {
+    background: linear-gradient(135deg, var(--sv-accent), var(--sv-primary));
+    color: #07111f;
+}
+
+.sv-btn-ghost {
+    color: var(--sv-text);
+    border: 1px solid rgba(232, 238, 245, 0.18);
+}
+
+.sv-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+}
+
+.sv-card {
+    background: rgba(14, 26, 43, 0.86);
+    border: 1px solid rgba(20, 184, 166, 0.16);
+    border-radius: 16px;
+    padding: 20px;
+}
+
+.sv-card h2 {
+    margin: 0 0 8px;
+    font-size: 16px;
+}
+
+.sv-card p {
+    margin: 0;
+    color: var(--sv-muted);
+    font-size: 14px;
+}
+
+.sv-foot {
+    margin-top: 48px;
+    color: var(--sv-muted);
+    font-size: 13px;
+}
+
+.sv-foot a {
+    color: var(--sv-accent);
+}

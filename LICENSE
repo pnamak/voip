@@ -1,0 +1,13 @@
+GNU LESSER GENERAL PUBLIC LICENSE
+Version 3, 29 June 2007
+
+SmartVoIP is a branded deployment overlay for MagnusBilling.
+
+MagnusBilling is copyright MagnusSolution and is distributed under the
+GNU Lesser General Public License v3.0. See the upstream project:
+
+https://github.com/magnussolution/magnusbilling
+
+This repository's branding, DigitalOcean automation, and documentation
+are provided under the same LGPL-3.0 terms so operators can deploy a
+white-label billing panel without relicensing the MagnusBilling engine.
