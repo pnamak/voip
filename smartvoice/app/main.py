@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from . import config
 from .ocs import MagnusBillingOcs, MockOcs, OcsError, get_ocs
-from .reports import bound_dates, csv_text, matches_query, normalize_cdr, summarize
+from .reports import REPORTS, bound_dates, csv_text, in_date_range, matches_query, menu_items, normalize_row, summarize
 from .sip_status import collect_sip_monitor
 from .store import BssStore
 
@@ -106,10 +106,14 @@ def current_user(request: Request) -> str:
 
 
 def _rows(payload: Any) -> list[dict[str, Any]]:
-    if isinstance(payload, dict) and isinstance(payload.get("rows"), list):
-        return payload["rows"]
+    if isinstance(payload, dict):
+        rows = payload.get("rows")
+        if rows is False or rows is None:
+            return []
+        if isinstance(rows, list):
+            return [row for row in rows if isinstance(row, dict)]
     if isinstance(payload, list):
-        return payload
+        return [row for row in payload if isinstance(row, dict)]
     return []
 
 
@@ -345,57 +349,63 @@ def usage(user: str = Depends(current_user)) -> dict[str, Any]:
     }
 
 
-def _report(module: str, failed: bool, q: str, date_from: str, date_to: str, page: int, limit: int) -> dict[str, Any]:
-    start, end = bound_dates(date_from, date_to)
+def _build_report(
+    slug: str,
+    q: str,
+    date_from: str,
+    date_to: str,
+    page: int,
+    limit: int,
+) -> dict[str, Any]:
+    spec = REPORTS.get(slug)
+    if spec is None:
+        raise HTTPException(status_code=404, detail="Unknown report")
     client = ocs()
     client.clear_filter()
     try:
-        if start:
-            client.set_filter("starttime", start, "gt", "date")
-        if end:
-            client.set_filter("starttime", end, "lt", "date")
-        payload = client.read(module, page=max(page, 1), limit=min(max(limit, 1), 1000))
+        if spec.date_field == "starttime":
+            start, end = bound_dates(date_from, date_to)
+            if start:
+                client.set_filter("starttime", start, "gt", "date")
+            if end:
+                client.set_filter("starttime", end, "lt", "date")
+        payload = client.read(spec.module, page=max(page, 1), limit=min(max(limit, 1), 1000))
     finally:
         client.clear_filter()
     raw = _rows(payload)
     total = payload.get("count", len(raw)) if isinstance(payload, dict) else len(raw)
-    rows = [normalize_cdr(row, failed=failed) for row in raw if matches_query(row, q)]
+    try:
+        total = int(total or 0)
+    except (TypeError, ValueError):
+        total = len(raw)
+    rows = [
+        item
+        for item in (normalize_row(row, spec) for row in raw)
+        if matches_query(item, q) and in_date_range(item, spec, date_from, date_to)
+    ]
     return {
+        "slug": spec.slug,
+        "title": spec.title,
+        "subtitle": spec.subtitle,
+        "kind": spec.kind,
+        "columns": spec.columns,
         "rows": rows,
         "count": len(rows),
         "ocs_count": total,
-        "summary": summarize(rows, failed=failed),
+        "summary": summarize(rows, spec),
         "filters": {"q": q, "date_from": date_from, "date_to": date_to, "page": page, "limit": limit},
         "ocs": client.health(),
     }
 
 
-@app.get("/api/reports/cdr")
-def report_cdr(
-    user: str = Depends(current_user),
-    q: str = "",
-    date_from: str = "",
-    date_to: str = "",
-    page: int = Query(1, ge=1),
-    limit: int = Query(200, ge=1, le=1000),
-) -> dict[str, Any]:
-    return _report("call", False, q, date_from, date_to, page, limit)
+@app.get("/api/reports")
+def report_index(user: str = Depends(current_user)) -> dict[str, Any]:
+    return {"rows": menu_items()}
 
 
-@app.get("/api/reports/cdr-failed")
-def report_cdr_failed(
-    user: str = Depends(current_user),
-    q: str = "",
-    date_from: str = "",
-    date_to: str = "",
-    page: int = Query(1, ge=1),
-    limit: int = Query(200, ge=1, le=1000),
-) -> dict[str, Any]:
-    return _report("callFailed", True, q, date_from, date_to, page, limit)
-
-
-@app.get("/api/reports/cdr.csv")
-def report_cdr_csv(
+@app.get("/api/reports/{slug}.csv")
+def report_csv(
+    slug: str,
     user: str = Depends(current_user),
     q: str = "",
     date_from: str = "",
@@ -403,29 +413,28 @@ def report_cdr_csv(
     page: int = Query(1, ge=1),
     limit: int = Query(1000, ge=1, le=1000),
 ) -> Response:
-    data = _report("call", False, q, date_from, date_to, page, limit)
+    spec = REPORTS.get(slug)
+    if spec is None:
+        raise HTTPException(status_code=404, detail="Unknown report")
+    data = _build_report(slug, q, date_from, date_to, page, limit)
     return Response(
-        content=csv_text(data["rows"], failed=False),
+        content=csv_text(data["rows"], spec),
         media_type="text/csv",
-        headers={"Content-Disposition": 'attachment; filename="smartvoice-cdr.csv"'},
+        headers={"Content-Disposition": f'attachment; filename="{spec.filename}"'},
     )
 
 
-@app.get("/api/reports/cdr-failed.csv")
-def report_cdr_failed_csv(
+@app.get("/api/reports/{slug}")
+def report_view(
+    slug: str,
     user: str = Depends(current_user),
     q: str = "",
     date_from: str = "",
     date_to: str = "",
     page: int = Query(1, ge=1),
-    limit: int = Query(1000, ge=1, le=1000),
-) -> Response:
-    data = _report("callFailed", True, q, date_from, date_to, page, limit)
-    return Response(
-        content=csv_text(data["rows"], failed=True),
-        media_type="text/csv",
-        headers={"Content-Disposition": 'attachment; filename="smartvoice-cdr-failed.csv"'},
-    )
+    limit: int = Query(200, ge=1, le=1000),
+) -> dict[str, Any]:
+    return _build_report(slug, q, date_from, date_to, page, limit)
 
 
 @app.get("/api/sip-devices")

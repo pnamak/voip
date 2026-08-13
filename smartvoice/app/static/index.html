@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>SmartVoice BSS</title>
     <link rel="icon" href="static/logo.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="static/smartvoice.css?v=4">
+    <link rel="stylesheet" href="static/smartvoice.css?v=5">
 </head>
 <body>
     <div id="login" class="login">
@@ -35,6 +35,17 @@
                     <div class="nav-sub">
                         <button type="button" data-view="cdr">CDR</button>
                         <button type="button" data-view="cdr-failed">CDR Failed</button>
+                        <button type="button" data-view="summary-per-day">Summary per Day</button>
+                        <button type="button" data-view="summary-day-user">Summary Day User</button>
+                        <button type="button" data-view="summary-day-trunk">Summary Day Trunk</button>
+                        <button type="button" data-view="summary-day-agent">Summary Day Agent</button>
+                        <button type="button" data-view="summary-per-month">Summary per Month</button>
+                        <button type="button" data-view="summary-month-user">Summary Month User</button>
+                        <button type="button" data-view="summary-month-trunk">Summary Month Trunk</button>
+                        <button type="button" data-view="summary-per-user">Summary per User</button>
+                        <button type="button" data-view="summary-per-trunk">Summary per Trunk</button>
+                        <button type="button" data-view="call-archive">Call Archive</button>
+                        <button type="button" data-view="summary-month-did">Summary Month DID</button>
                     </div>
                 </div>
                 <button type="button" data-view="usage">OCS usage</button>
@@ -55,6 +66,6 @@
             <section id="view"></section>
         </main>
     </div>
-    <script src="static/app.js?v=4"></script>
+    <script src="static/app.js?v=5"></script>
 </body>
 </html>

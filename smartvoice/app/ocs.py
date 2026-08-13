@@ -370,6 +370,181 @@ class MockOcs:
                 "secret": "should-not-leak",
             },
         ]
+        self._archive = [
+            {
+                "id": 100,
+                "id_user": 21,
+                "idUserusername": "alice",
+                "calledstation": "67810000",
+                "sessiontime": 55,
+                "sessionbill": 0.22,
+                "starttime": "2026-07-02 11:04:00",
+                "stoptime": "2026-07-02 11:04:55",
+                "terminatecauseid": 1,
+                "src": "alice",
+                "callerid": "Alice Tari",
+                "buycost": 0.05,
+                "idPlanname": "SmartVoice Default",
+                "idPrefixdestination": "Vanuatu mobile",
+                "idTrunktrunkcode": "Pacific-Out",
+                "uniqueid": "mock-archive-1",
+            }
+        ]
+        self._summary_day = [
+            {
+                "id": 1,
+                "day": "2026-08-13",
+                "sessiontime": 5.2167,
+                "aloc_all_calls": 157,
+                "nbcall": 2,
+                "nbcall_fail": 3,
+                "buycost": 0.52,
+                "sessionbill": 1.56,
+                "lucro": 1.04,
+                "asr": 40.0,
+            }
+        ]
+        self._summary_day_user = [
+            {
+                "id": 1,
+                "day": "2026-08-13",
+                "id_user": 21,
+                "idUserusername": "alice",
+                "sessiontime": 1.2167,
+                "aloc_all_calls": 73,
+                "nbcall": 1,
+                "nbcall_fail": 2,
+                "buycost": 0.12,
+                "sessionbill": 0.41,
+                "lucro": 0.29,
+                "asr": 33.33,
+                "agent_bill": 0,
+            }
+        ]
+        self._summary_day_trunk = [
+            {
+                "id": 1,
+                "day": "2026-08-13",
+                "id_trunk": 1,
+                "idTrunktrunkcode": "Pacific-Out",
+                "sessiontime": 5.2167,
+                "aloc_all_calls": 157,
+                "nbcall": 2,
+                "nbcall_fail": 3,
+                "buycost": 0.52,
+                "sessionbill": 1.56,
+                "lucro": 1.04,
+                "asr": 40.0,
+            }
+        ]
+        self._summary_day_agent = [
+            {
+                "id": 1,
+                "day": "2026-08-13",
+                "id_user": 10,
+                "idUserusername": "pacific",
+                "sessiontime": 1.2167,
+                "aloc_all_calls": 73,
+                "nbcall": 1,
+                "nbcall_fail": 1,
+                "buycost": 0.12,
+                "sessionbill": 0.41,
+                "lucro": 0.29,
+                "agent_bill": 0.35,
+                "agent_lucro": 0.23,
+                "asr": 50.0,
+            }
+        ]
+        self._summary_month = [
+            {
+                "id": 1,
+                "month": "2026-08",
+                "sessiontime": 5.2167,
+                "aloc_all_calls": 157,
+                "nbcall": 2,
+                "nbcall_fail": 3,
+                "buycost": 0.52,
+                "sessionbill": 1.56,
+                "lucro": 1.04,
+                "asr": 40.0,
+            }
+        ]
+        self._summary_month_user = [
+            {
+                "id": 1,
+                "month": "2026-08",
+                "id_user": 21,
+                "idUserusername": "alice",
+                "sessiontime": 1.2167,
+                "aloc_all_calls": 73,
+                "nbcall": 1,
+                "nbcall_fail": 2,
+                "buycost": 0.12,
+                "sessionbill": 0.41,
+                "lucro": 0.29,
+                "asr": 33.33,
+                "agent_bill": 0,
+            }
+        ]
+        self._summary_month_trunk = [
+            {
+                "id": 1,
+                "month": "2026-08",
+                "id_trunk": 1,
+                "idTrunktrunkcode": "Pacific-Out",
+                "sessiontime": 5.2167,
+                "aloc_all_calls": 157,
+                "nbcall": 2,
+                "nbcall_fail": 3,
+                "buycost": 0.52,
+                "sessionbill": 1.56,
+                "lucro": 1.04,
+                "asr": 40.0,
+            }
+        ]
+        self._summary_user = [
+            {
+                "id": 1,
+                "id_user": 21,
+                "idUserusername": "alice",
+                "sessiontime": 1.2167,
+                "aloc_all_calls": 73,
+                "nbcall": 1,
+                "nbcall_fail": 2,
+                "buycost": 0.12,
+                "sessionbill": 0.41,
+                "lucro": 0.29,
+                "asr": 33.33,
+                "agent_bill": 0,
+            }
+        ]
+        self._summary_trunk = [
+            {
+                "id": 1,
+                "id_trunk": 1,
+                "idTrunktrunkcode": "Pacific-Out",
+                "sessiontime": 5.2167,
+                "aloc_all_calls": 157,
+                "nbcall": 2,
+                "nbcall_fail": 3,
+                "buycost": 0.52,
+                "sessionbill": 1.56,
+                "lucro": 1.04,
+                "asr": 40.0,
+            }
+        ]
+        self._summary_month_did = [
+            {
+                "id": 1,
+                "month": "2026-08",
+                "id_did": 2,
+                "idDiddid": "2001",
+                "sessiontime": 2.7833,
+                "aloc_all_calls": 84,
+                "nbcall": 2,
+                "sessionbill": 0,
+            }
+        ]
         self._next_user = 30
         self._next_plan = 3
         self._next_refill = 2
@@ -425,6 +600,17 @@ class MockOcs:
             "callOnLine": self._online,
             "sip": self._sip,
             "callFailed": self._failed,
+            "callArchive": self._archive,
+            "callSummaryPerDay": self._summary_day,
+            "callSummaryDayUser": self._summary_day_user,
+            "callSummaryDayTrunk": self._summary_day_trunk,
+            "callSummaryDayAgent": self._summary_day_agent,
+            "callSummaryPerMonth": self._summary_month,
+            "callSummaryMonthUser": self._summary_month_user,
+            "callSummaryMonthTrunk": self._summary_month_trunk,
+            "callSummaryPerUser": self._summary_user,
+            "callSummaryPerTrunk": self._summary_trunk,
+            "callSummaryMonthDid": self._summary_month_did,
         }.get(module, [])
         rows = self._apply_filter(list(table))
         start = 0 if page <= 1 else (page - 1) * limit

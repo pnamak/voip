@@ -173,6 +173,26 @@ class BssAppTests(unittest.TestCase):
         self.assertIn('data-view="cdr"', html)
         self.assertIn('data-view="cdr-failed"', html)
         self.assertIn("Reports", html)
+        from smartvoice.app.reports import REPORTS
+
+        for slug, spec in REPORTS.items():
+            self.assertIn(f'data-view="{slug}"', html)
+            payload = self.client.get(f"/api/reports/{slug}")
+            self.assertEqual(payload.status_code, 200, f"{slug}: {payload.text}")
+            body = payload.json()
+            self.assertEqual(body["slug"], slug)
+            self.assertEqual(body["title"], spec.title)
+            self.assertIn("columns", body)
+        day = self.client.get("/api/reports/summary-per-day").json()
+        self.assertTrue(any(row["day"] == "2026-08-13" for row in day["rows"]))
+        archive = self.client.get("/api/reports/call-archive").json()
+        self.assertTrue(any(row["username"] == "alice" for row in archive["rows"]))
+        did = self.client.get("/api/reports/summary-month-did").json()
+        self.assertTrue(any(row["did"] == "2001" for row in did["rows"]))
+        agent = self.client.get("/api/reports/summary-day-agent").json()
+        self.assertTrue(any(row["username"] == "pacific" for row in agent["rows"]))
+        empty_ok = self.client.get("/api/reports/summary-per-trunk")
+        self.assertEqual(empty_ok.status_code, 200, empty_ok.text)
 
 
 class SipStatusParseTests(unittest.TestCase):

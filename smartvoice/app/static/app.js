@@ -1,3 +1,19 @@
+const REPORT_MENU = [
+    ["cdr", "CDR", "Answered call detail records from the MagnusBilling OCS"],
+    ["cdr-failed", "CDR Failed", "Failed and unanswered attempts from the MagnusBilling OCS"],
+    ["summary-per-day", "Summary per Day", "Daily answered and failed call totals from the OCS"],
+    ["summary-day-user", "Summary Day User", "Daily call totals grouped by customer"],
+    ["summary-day-trunk", "Summary Day Trunk", "Daily call totals grouped by trunk"],
+    ["summary-day-agent", "Summary Day Agent", "Daily call totals grouped by reseller or agent"],
+    ["summary-per-month", "Summary per Month", "Monthly answered and failed call totals from the OCS"],
+    ["summary-month-user", "Summary Month User", "Monthly call totals grouped by customer"],
+    ["summary-month-trunk", "Summary Month Trunk", "Monthly call totals grouped by trunk"],
+    ["summary-per-user", "Summary per User", "Lifetime call totals grouped by customer"],
+    ["summary-per-trunk", "Summary per Trunk", "Lifetime call totals grouped by trunk"],
+    ["call-archive", "Call Archive", "Archived call detail records from the MagnusBilling OCS"],
+    ["summary-month-did", "Summary Month DID", "Monthly inbound totals grouped by DID"],
+];
+
 const titles = {
     dashboard: ["Dashboard", "Customers, wallets, SIP devices, and real-time charging"],
     sip: ["SIP devices", "Live registration and call status from the MagnusBilling OCS and Asterisk"],
@@ -5,13 +21,14 @@ const titles = {
     products: ["Products", "Catalog in BSS, rate plans charged by the OCS"],
     payments: ["Payments", "Collect in BSS, apply credit through OCS refill"],
     resellers: ["Resellers", "Agent accounts and downstream customer wallets"],
-    cdr: ["CDR", "Answered call detail records from the MagnusBilling OCS"],
-    "cdr-failed": ["CDR Failed", "Failed and unanswered attempts from the MagnusBilling OCS"],
     usage: ["OCS usage", "Live calls and CDRs from the online charging engine"],
     invoices: ["Invoices", "BSS invoices rolled up from OCS call charges"],
 };
+REPORT_MENU.forEach(([slug, title, subtitle]) => {
+    titles[slug] = [title, subtitle];
+});
 
-const reportState = { cdr: "", "cdr-failed": "" };
+const reportState = Object.fromEntries(REPORT_MENU.map(([slug]) => [slug, ""]));
 
 const BASE = window.location.pathname.indexOf("/smartvoice") === 0 ? "/smartvoice" : "";
 
@@ -181,12 +198,6 @@ const views = {
             <div class="card">${table(["ID", "Username", "Company", "Customers", "Downstream wallet", "Own credit"], data.rows.map((r) => [r.id, r.username, r.company_name, r.customers, money(r.customer_wallet), money(r.credit)]))}</div>
         `;
     },
-    async cdr() {
-        await renderCdrReport("cdr", false);
-    },
-    async ["cdr-failed"]() {
-        await renderCdrReport("cdr-failed", true);
-    },
     async sip() {
         const data = await api("/api/sip-devices");
         setOcsPill(data.ocs);
@@ -230,76 +241,67 @@ const views = {
     },
 };
 
+REPORT_MENU.forEach(([slug]) => {
+    views[slug] = () => renderReport(slug);
+});
+
 function causeTag(label, failed) {
     const kind = !failed && String(label).toUpperCase() === "ANSWER" ? "ok" : "post";
     return `<span class="tag ${kind}">${esc(label || "")}</span>`;
 }
 
-function reportFilterForm(name) {
-    const params = new URLSearchParams(reportState[name] || "");
-    const path = name === "cdr" ? "cdr" : "cdr-failed";
+function formatReportCell(col, row) {
+    const value = row[col.key];
+    if (col.format === "money") return money(value);
+    if (col.format === "int") return String(value ?? 0);
+    if (col.format === "pct") return Number(value || 0).toFixed(2);
+    if (col.format === "cause") return causeTag(value, row.failed);
+    return esc(value ?? "");
+}
+
+function reportFilterForm(slug) {
+    const params = new URLSearchParams(reportState[slug] || "");
     return `
-        <form class="form card" onsubmit="return applyReport(event, '${name}')">
-            <label>Search <input name="q" value="${esc(params.get("q") || "")}" placeholder="User, source, destination"></label>
+        <form class="form card" onsubmit="return applyReport(event, '${slug}')">
+            <label>Search <input name="q" value="${esc(params.get("q") || "")}" placeholder="User, trunk, DID, destination"></label>
             <label>From <input name="date_from" type="date" value="${esc(params.get("date_from") || "")}"></label>
             <label>To <input name="date_to" type="date" value="${esc(params.get("date_to") || "")}"></label>
             <button class="btn" type="submit">Run report</button>
-            <a class="btn ghost" href="${BASE}/api/reports/${path}.csv?${reportState[name] || ""}">Export CSV</a>
+            <a class="btn ghost" href="${BASE}/api/reports/${slug}.csv?${reportState[slug] || ""}">Export CSV</a>
         </form>
     `;
 }
 
-async function renderCdrReport(name, failed) {
-    const path = failed ? "/api/reports/cdr-failed" : "/api/reports/cdr";
-    const qs = reportState[name] ? `?${reportState[name]}` : "";
-    const data = await api(path + qs);
+async function renderReport(slug) {
+    const qs = reportState[slug] ? `?${reportState[slug]}` : "";
+    const data = await api("/api/reports/" + slug + qs);
     setOcsPill(data.ocs);
     const summary = data.summary || {};
+    const columns = data.columns || [];
+    const kind = data.kind || "";
     const causeCards = (summary.top_causes || []).map((item) => `<div class="card"><h3>${esc(item.label)}</h3><div class="n">${item.count}</div></div>`).join("");
-    const rows = failed
-        ? (data.rows || []).map((r) => [
-            esc(r.starttime),
-            esc(r.username),
-            esc(r.src),
-            esc(r.callerid),
-            esc(r.destination),
-            esc(r.prefix),
-            esc(r.plan),
-            esc(r.trunk),
-            causeTag(r.terminate_cause, true),
-            esc(r.hangup_cause || "—"),
-        ])
-        : (data.rows || []).map((r) => [
-            esc(r.starttime),
-            esc(r.username),
-            esc(r.src),
-            esc(r.callerid),
-            esc(r.destination),
-            esc(r.prefix),
-            esc(r.duration),
-            money(r.billed),
-            money(r.buy_cost),
-            money(r.margin),
-            causeTag(r.terminate_cause, false),
-        ]);
-    const headers = failed
-        ? ["Started", "User", "Source", "Caller ID", "Destination", "Prefix", "Plan", "Trunk", "Cause", "Hangup"]
-        : ["Started", "User", "Source", "Caller ID", "Destination", "Prefix", "Duration", "Billed", "Buy", "Margin", "Cause"];
-    document.getElementById("view").innerHTML = `
-        ${reportFilterForm(name)}
-        <div class="grid">
-            <div class="card"><h3>${failed ? "Failed attempts" : "CDRs"}</h3><div class="n">${summary.count || 0}</div></div>
-            ${failed ? "" : `<div class="card"><h3>Talk time</h3><div class="n">${esc(summary.duration || "0:00")}</div></div>
+    const rows = (data.rows || []).map((row) => columns.map((col) => formatReportCell(col, row)));
+    const metricCards = kind === "summary"
+        ? `<div class="card"><h3>Rows</h3><div class="n">${summary.count || 0}</div></div>
+            <div class="card"><h3>Calls</h3><div class="n">${summary.calls || 0}</div></div>
+            <div class="card"><h3>Failed</h3><div class="n">${summary.failed_calls || 0}</div></div>
+            <div class="card"><h3>ASR</h3><div class="n">${Number(summary.asr || 0).toFixed(1)}%</div></div>
+            <div class="card"><h3>Duration</h3><div class="n">${esc(summary.duration || "0:00")}</div></div>
+            <div class="card"><h3>Billed</h3><div class="n">${money(summary.billed)}</div></div>`
+        : `<div class="card"><h3>${kind === "cdr-failed" ? "Failed attempts" : "CDRs"}</h3><div class="n">${summary.count || 0}</div></div>
+            ${kind === "cdr-failed" ? "" : `<div class="card"><h3>Talk time</h3><div class="n">${esc(summary.duration || "0:00")}</div></div>
             <div class="card"><h3>Billed</h3><div class="n">${money(summary.billed)}</div></div>
             <div class="card"><h3>Margin</h3><div class="n">${money(summary.margin)}</div></div>`}
-            ${causeCards}
-        </div>
+            ${causeCards}`;
+    document.getElementById("view").innerHTML = `
+        ${reportFilterForm(slug)}
+        <div class="grid">${metricCards}</div>
         <div class="card">
             <div class="toolbar">
-                <h3>${failed ? "Failed call attempts" : "Call detail records"}</h3>
+                <h3>${esc(data.title || slug)}</h3>
                 <span class="muted">${data.ocs_count != null ? `${data.ocs_count} in OCS` : ""}</span>
             </div>
-            ${table(headers, rows)}
+            ${table(columns.map((col) => col.label), rows)}
         </div>
     `;
 }

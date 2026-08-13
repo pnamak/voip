@@ -17,8 +17,8 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 a { color: var(--accent); }
 button, input, select, textarea { font: inherit; }
 
-.app { display: grid; grid-template-columns: 240px 1fr; min-height: 100%; }
-.side { background: #081525; border-right: 1px solid var(--line); padding: 20px 16px; }
+.app { display: grid; grid-template-columns: 260px 1fr; min-height: 100%; }
+.side { background: #081525; border-right: 1px solid var(--line); padding: 20px 16px; overflow-y: auto; }
 .brand { display: flex; gap: 10px; align-items: center; font-weight: 700; margin-bottom: 8px; }
 .brand img { width: 40px; height: 40px; border-radius: 10px; }
 .side p { color: var(--muted); font-size: 12px; margin: 0 0 24px; }
@@ -28,7 +28,7 @@ button, input, select, textarea { font: inherit; }
 .nav-parent { font-weight: 700; color: var(--muted); }
 .nav-parent::after { content: "▸"; float: right; opacity: .7; }
 .nav-group.open .nav-parent::after { content: "▾"; }
-.nav-sub { display: none; padding: 4px 0 4px 10px; }
+.nav-sub { display: none; padding: 4px 0 4px 10px; max-height: 50vh; overflow: auto; }
 .nav-group.open .nav-sub { display: block; }
 .nav-sub button { font-size: 13px; padding: 8px 12px; }
 .main { padding: 24px 28px 48px; }
