@@ -186,6 +186,37 @@ def _user_parents(users: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return parents
 
 
+def _ensure_client_sip(username: str) -> None:
+    """MagnusBilling API createUser omits SIP context; panel create sets billing."""
+    if not username:
+        return
+    client = ocs()
+    client.clear_filter()
+    try:
+        client.set_filter("name", username, "eq")
+        rows = _rows(client.read("sip", page=1, limit=20))
+    except OcsError:
+        return
+    finally:
+        client.clear_filter()
+    for row in rows:
+        if str(row.get("name") or "") != username:
+            continue
+        if str(row.get("context") or "").strip():
+            return
+        patch = {
+            "context": "billing",
+            "host": row.get("host") or "dynamic",
+            "insecure": row.get("insecure") or "no",
+            "allow": row.get("allow") or "g729,gsm,alaw,ulaw",
+        }
+        try:
+            client.update("sip", row["id"], patch)
+        except OcsError:
+            return
+        return
+
+
 def _create_ocs_user(
     payload: CustomerIn,
     *,
@@ -210,6 +241,8 @@ def _create_ocs_user(
     created = result.get("data") if isinstance(result.get("data"), dict) else None
     if created and note:
         store().set_note(int(created["id"]), note)
+    if id_group == config.CLIENT_GROUP_ID:
+        _ensure_client_sip(str(data.get("username") or (created or {}).get("username") or ""))
     result["credentials"] = credentials
     return result
 

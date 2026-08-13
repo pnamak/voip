@@ -580,6 +580,7 @@ class MockOcs:
         self._next_user = 30
         self._next_plan = 3
         self._next_refill = 2
+        self._next_sip = 4
 
     def close(self) -> None:
         return None
@@ -682,7 +683,7 @@ class MockOcs:
         return {"success": False, "errors": f"Unsupported mock create for {module}"}
 
     def update(self, module: str, item_id: int | str, data: dict[str, Any]) -> Any:
-        table = {"user": self._users, "plan": self._plans}.get(module, [])
+        table = {"user": self._users, "plan": self._plans, "sip": self._sip}.get(module, [])
         for row in table:
             if str(row["id"]) == str(item_id):
                 row.update({k: v for k, v in data.items() if k not in {"module", "action", "id"}})
@@ -745,6 +746,29 @@ class MockOcs:
         }
         self._next_user += 1
         self._users.append(item)
+        if group_id == config.CLIENT_GROUP_ID:
+            self._sip.append(
+                {
+                    "id": self._next_sip,
+                    "id_user": item["id"],
+                    "name": username,
+                    "defaultuser": username,
+                    "accountcode": username,
+                    "idUserusername": username,
+                    "callerid": data.get("phone") or "",
+                    "cid_number": data.get("phone") or "",
+                    "host": "dynamic",
+                    "status": 1,
+                    "allow": "g729,gsm,alaw,ulaw",
+                    "insecure": "no",
+                    "context": None,
+                    "lineStatus": "unregistered",
+                    "secret": data.get("password", ""),
+                    "useragent": "",
+                    "fullcontact": "",
+                }
+            )
+            self._next_sip += 1
         return {"success": True, "data": item}
 
     def health(self) -> dict[str, Any]:

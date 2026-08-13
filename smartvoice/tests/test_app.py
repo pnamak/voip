@@ -172,6 +172,13 @@ class BssAppTests(unittest.TestCase):
         customers = self.client.get("/api/customers").json()["rows"]
         row = next(item for item in customers if item["username"] == "portvila")
         self.assertEqual(row["bss_note"], "Created from BSS")
+        ocs = appmod.ocs()
+        ocs.clear_filter()
+        ocs.set_filter("name", "portvila", "eq")
+        sip_rows = ocs.read("sip")["rows"]
+        ocs.clear_filter()
+        self.assertTrue(sip_rows)
+        self.assertEqual(sip_rows[0]["context"], "billing")
         duplicate = self.client.post(
             "/api/customers",
             json={"username": "portvila", "firstname": "Marie", "password": "OtherPass9"},
