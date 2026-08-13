@@ -685,12 +685,50 @@ class MockOcs:
     def update(self, module: str, item_id: int | str, data: dict[str, Any]) -> Any:
         table = {"user": self._users, "plan": self._plans, "sip": self._sip}.get(module, [])
         for row in table:
-            if str(row["id"]) == str(item_id):
-                row.update({k: v for k, v in data.items() if k not in {"module", "action", "id"}})
-                return {"success": True, "rows": [row]}
+            if str(row["id"]) != str(item_id):
+                continue
+            if module == "user":
+                new_username = data.get("username")
+                if new_username and any(
+                    str(other.get("username")) == str(new_username) and str(other["id"]) != str(item_id)
+                    for other in self._users
+                ):
+                    return {"success": False, "errors": "This username already in use"}
+            row.update({k: v for k, v in data.items() if k not in {"module", "action", "id"}})
+            if module == "user":
+                plan_id = int(row.get("id_plan") or 1)
+                row["idPlanname"] = next((p["name"] for p in self._plans if int(p["id"]) == plan_id), "")
+                group_id = int(row.get("id_group") or config.CLIENT_GROUP_ID)
+                row["idGroupname"] = "Agent" if group_id == 2 else "Client"
+                for sip in self._sip:
+                    if str(sip.get("id_user")) != str(row["id"]):
+                        continue
+                    sip["name"] = row.get("username") or sip.get("name")
+                    sip["defaultuser"] = sip["name"]
+                    sip["accountcode"] = sip["name"]
+                    sip["idUserusername"] = sip["name"]
+                    if data.get("password"):
+                        sip["secret"] = data["password"]
+                    if data.get("phone"):
+                        sip["callerid"] = data["phone"]
+                        sip["cid_number"] = data["phone"]
+            return {"success": True, "rows": [row]}
         return {"success": False, "errors": "Not found"}
 
     def destroy(self, module: str, item_id: int | str) -> Any:
+        if module == "user":
+            before = len(self._users)
+            self._users = [row for row in self._users if str(row["id"]) != str(item_id)]
+            self._sip = [row for row in self._sip if str(row.get("id_user")) != str(item_id)]
+            if len(self._users) == before:
+                return {"success": False, "errors": "Not found"}
+            return {"success": True}
+        if module == "sip":
+            before = len(self._sip)
+            self._sip = [row for row in self._sip if str(row["id"]) != str(item_id)]
+            if len(self._sip) == before:
+                return {"success": False, "errors": "Not found"}
+            return {"success": True}
         return {"success": True}
 
     def create_user(self, data: dict[str, Any]) -> Any:

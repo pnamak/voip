@@ -198,3 +198,123 @@ def prepare_user_payload(
 
     credentials = {"username": username, "password": password}
     return data, note, credentials
+
+
+def prepare_user_update(
+    payload: Any,
+    existing: dict[str, Any],
+    *,
+    id_group: int,
+    force_typepaid: int | None = None,
+) -> tuple[dict[str, Any], str]:
+    """Build an OCS user save body for an existing customer.
+
+    Blank password is left unchanged. Returns (ocs_fields, bss_note).
+    """
+    raw = payload.model_dump(exclude_unset=True) if hasattr(payload, "model_dump") else dict(payload)
+    note = str(raw["note"]) if "note" in raw else str(existing.get("bss_note") or existing.get("note") or "")
+    username = str(raw.get("username") or existing.get("username") or "").strip()
+    username = validate_username(username)
+
+    data: dict[str, Any] = {
+        "username": username,
+        "id_group": int(id_group),
+        "id_user": _as_int(raw.get("id_user"), _as_int(existing.get("id_user"), 1)) or 1,
+        "active": _as_int(raw.get("active"), _as_int(existing.get("active"), 1)),
+        "typepaid": force_typepaid
+        if force_typepaid is not None
+        else _as_int(raw.get("typepaid"), _as_int(existing.get("typepaid"), 0)),
+        "credit": float(raw["credit"]) if "credit" in raw else float(existing.get("credit") or 0),
+        "creditlimit": _as_int(raw.get("creditlimit"), _as_int(existing.get("creditlimit"), 0)) or 0,
+    }
+
+    password = str(raw.get("password") or "")
+    if password:
+        data["password"] = validate_password(password, username)
+
+    email = str(raw.get("email") or "").strip()
+    if not email:
+        email = str(existing.get("email") or "").strip() or f"{username}@smartvoice.local"
+    data["email"] = email
+
+    language = str(raw.get("language") or existing.get("language") or "en").strip() or "en"
+    if language not in LANGUAGES:
+        language = "en"
+    data["language"] = language
+
+    plan_id = _as_int(raw.get("id_plan"), _as_int(existing.get("id_plan")))
+    if plan_id is not None and plan_id > 0:
+        data["id_plan"] = plan_id
+
+    offer_id = _as_int(raw.get("id_offer"))
+    if offer_id is not None and offer_id > 0:
+        data["id_offer"] = offer_id
+
+    pin = _as_int(raw.get("callingcard_pin"))
+    if pin is not None and pin > 0:
+        data["callingcard_pin"] = pin
+
+    for key in STRING_FIELDS:
+        if key in {"username", "password", "email", "language"}:
+            continue
+        if key in raw:
+            data[key] = "" if raw[key] is None else str(raw[key]).strip()
+        else:
+            data[key] = str(existing.get(key) or "")
+
+    for key, default in (
+        ("calllimit", -1),
+        ("sipaccountlimit", -1),
+        ("cpslimit", -1),
+        ("inbound_call_limit", -1),
+        ("restriction", 0),
+        ("record_call", 0),
+        ("credit_notification", 10),
+    ):
+        data[key] = _as_int(raw.get(key), _as_int(existing.get(key), default))
+        if data[key] is None:
+            data[key] = default
+
+    return data, note
+
+
+BULK_USER_FIELDS = (
+    "id_plan",
+    "id_user",
+    "active",
+    "typepaid",
+    "credit",
+    "creditlimit",
+    "language",
+    "calllimit",
+    "sipaccountlimit",
+    "inbound_call_limit",
+    "cpslimit",
+    "restriction",
+    "record_call",
+    "prefix_local",
+)
+
+
+def prepare_bulk_fields(payload: Any) -> dict[str, Any]:
+    raw = payload.model_dump(exclude_none=True) if hasattr(payload, "model_dump") else dict(payload)
+    data: dict[str, Any] = {}
+    for key in BULK_USER_FIELDS:
+        if key not in raw:
+            continue
+        value = raw[key]
+        if key in STRING_FIELDS:
+            data[key] = str(value).strip()
+            if key == "language" and data[key] not in LANGUAGES:
+                raise HTTPException(status_code=400, detail="Invalid language")
+            continue
+        if key == "credit":
+            data[key] = float(value)
+            continue
+        number = _as_int(value)
+        if number is None:
+            continue
+        if key == "id_plan" and number < 1:
+            continue
+        data[key] = number
+    return data

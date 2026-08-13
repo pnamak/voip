@@ -13,7 +13,7 @@ from .reports import REPORTS, bound_dates, csv_text, in_date_range, matches_quer
 from .security import collect_blocked_ips
 from .sip_status import collect_sip_monitor
 from .store import BssStore
-from .users import flatten_ocs_errors, prepare_user_payload
+from .users import flatten_ocs_errors, prepare_bulk_fields, prepare_user_payload, prepare_user_update
 
 APP_DIR = config.APP_DIR
 _store: BssStore | None = None
@@ -121,6 +121,25 @@ class InvoiceIn(BaseModel):
     period: str = Field(description="Billing period such as 2026-08")
 
 
+class CustomerBulkIn(BaseModel):
+    ids: list[int]
+    action: str = "update"
+    id_plan: int | None = None
+    id_user: int | None = None
+    active: int | None = None
+    typepaid: int | None = None
+    credit: float | None = None
+    creditlimit: int | None = None
+    language: str | None = None
+    calllimit: int | None = None
+    sipaccountlimit: int | None = None
+    inbound_call_limit: int | None = None
+    cpslimit: int | None = None
+    restriction: int | None = None
+    record_call: int | None = None
+    prefix_local: str | None = None
+
+
 def _cookie_name() -> str:
     return "smartvoice_session"
 
@@ -184,6 +203,121 @@ def _user_parents(users: list[dict[str, Any]]) -> list[dict[str, Any]]:
             }
         )
     return parents
+
+
+def _public_user(row: dict[str, Any]) -> dict[str, Any]:
+    clean = dict(row)
+    clean.pop("password", None)
+    clean.pop("secret", None)
+    return clean
+
+
+def _list_users() -> list[dict[str, Any]]:
+    return _rows(ocs().read("user", page=1, limit=500))
+
+
+def _find_user(ocs_user_id: int) -> dict[str, Any] | None:
+    for row in _list_users():
+        try:
+            if int(row.get("id")) == int(ocs_user_id):
+                return row
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _require_customer(ocs_user_id: int) -> dict[str, Any]:
+    row = _find_user(ocs_user_id)
+    if not row or _user_kind(row) != "customer":
+        raise HTTPException(status_code=404, detail="Customer not found")
+    return row
+
+
+def _ocs_write(result: Any, fallback: str) -> dict[str, Any]:
+    if not isinstance(result, dict):
+        return {"success": True, "result": result}
+    if result.get("success") is False:
+        raise HTTPException(status_code=400, detail=flatten_ocs_errors(result.get("errors"), fallback))
+    return result
+
+
+def _sync_client_sip(
+    user_id: int,
+    *,
+    username: str,
+    password: str | None = None,
+    phone: str | None = None,
+) -> None:
+    client = ocs()
+    client.clear_filter()
+    try:
+        rows = [row for row in _rows(client.read("sip", page=1, limit=500)) if str(row.get("id_user")) == str(user_id)]
+    except OcsError:
+        return
+    finally:
+        client.clear_filter()
+    if not rows:
+        _ensure_client_sip(username)
+        return
+    patch: dict[str, Any] = {
+        "name": username,
+        "defaultuser": username,
+        "accountcode": username,
+        "context": "billing",
+        "host": "dynamic",
+    }
+    if password:
+        patch["secret"] = password
+    if phone:
+        patch["callerid"] = phone
+        patch["cid_number"] = phone
+    for row in rows:
+        try:
+            if not str(row.get("context") or "").strip():
+                patch["context"] = "billing"
+            client.update("sip", row["id"], patch)
+        except OcsError:
+            continue
+
+
+def _update_ocs_customer(ocs_user_id: int, payload: CustomerIn, *, existing: dict[str, Any] | None = None) -> dict[str, Any]:
+    current = existing or _require_customer(ocs_user_id)
+    data, note = prepare_user_update(
+        payload,
+        current,
+        id_group=config.CLIENT_GROUP_ID,
+    )
+    try:
+        result = ocs().update("user", ocs_user_id, data)
+    except OcsError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    result = _ocs_write(result, "OCS rejected the customer update")
+    store().set_note(ocs_user_id, note)
+    _sync_client_sip(
+        ocs_user_id,
+        username=str(data.get("username") or current.get("username") or ""),
+        password=data.get("password"),
+        phone=str(data.get("phone") or "") or None,
+    )
+    rows = _rows(result)
+    updated = rows[0] if rows else _find_user(ocs_user_id) or data
+    updated = _public_user(updated)
+    updated["id"] = ocs_user_id
+    payload_out: dict[str, Any] = {"success": True, "data": updated}
+    if data.get("password"):
+        payload_out["credentials"] = {"username": data["username"], "password": data["password"]}
+    return payload_out
+
+
+def _delete_ocs_customer(ocs_user_id: int) -> dict[str, Any]:
+    _require_customer(ocs_user_id)
+    try:
+        result = ocs().destroy("user", ocs_user_id)
+    except OcsError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    _ocs_write(result, "OCS rejected the customer delete")
+    store().set_note(ocs_user_id, "")
+    return {"success": True, "id": ocs_user_id}
 
 
 def _ensure_client_sip(username: str) -> None:
@@ -324,11 +458,15 @@ def dashboard(user: str = Depends(current_user)) -> dict[str, Any]:
 
 @app.get("/api/customers")
 def customers(user: str = Depends(current_user)) -> dict[str, Any]:
-    users = _rows(ocs().read("user", page=1, limit=500))
-    rows = [row for row in users if _user_kind(row) == "customer"]
-    for row in rows:
-        row["bss_note"] = store().get_note(int(row["id"]))
-        row["paid_kind"] = _paid_kind(row)
+    users = _list_users()
+    rows = []
+    for row in users:
+        if _user_kind(row) != "customer":
+            continue
+        item = _public_user(row)
+        item["bss_note"] = store().get_note(int(row["id"]))
+        item["paid_kind"] = _paid_kind(row)
+        rows.append(item)
     return {
         "rows": rows,
         "count": len(rows),
@@ -344,6 +482,76 @@ def create_customer(payload: CustomerIn, user: str = Depends(current_user)) -> d
         id_group=config.CLIENT_GROUP_ID,
         fallback_error="OCS rejected the customer",
     )
+
+
+@app.post("/api/customers/bulk")
+def bulk_customers(payload: CustomerBulkIn, user: str = Depends(current_user)) -> dict[str, Any]:
+    ids = []
+    seen: set[int] = set()
+    for raw_id in payload.ids:
+        user_id = int(raw_id)
+        if user_id in seen:
+            continue
+        seen.add(user_id)
+        ids.append(user_id)
+    if not ids:
+        raise HTTPException(status_code=400, detail="Select at least one customer")
+    if len(ids) > 100:
+        raise HTTPException(status_code=400, detail="Bulk updates are limited to 100 customers")
+    action = (payload.action or "update").strip().lower()
+    if action not in {"update", "delete"}:
+        raise HTTPException(status_code=400, detail="Bulk action must be update or delete")
+    fields = prepare_bulk_fields(payload) if action == "update" else {}
+    if action == "update" and not fields:
+        raise HTTPException(status_code=400, detail="Choose at least one field to update")
+    updated: list[int] = []
+    deleted: list[int] = []
+    errors: list[dict[str, Any]] = []
+    for user_id in ids:
+        try:
+            current = _require_customer(user_id)
+            if action == "delete":
+                _delete_ocs_customer(user_id)
+                deleted.append(user_id)
+                continue
+            merged = {key: value for key, value in current.items() if key not in {"password", "secret", "id"}}
+            merged.update(fields)
+            patch = CustomerIn.model_validate(merged)
+            _update_ocs_customer(user_id, patch, existing=current)
+            updated.append(user_id)
+        except HTTPException as exc:
+            errors.append({"id": user_id, "detail": exc.detail})
+    return {
+        "success": not errors or bool(updated or deleted),
+        "action": action,
+        "updated": updated,
+        "deleted": deleted,
+        "errors": errors,
+        "count": len(updated) + len(deleted),
+    }
+
+
+@app.get("/api/customers/{ocs_user_id}")
+def get_customer(ocs_user_id: int, user: str = Depends(current_user)) -> dict[str, Any]:
+    row = _public_user(_require_customer(ocs_user_id))
+    row["bss_note"] = store().get_note(ocs_user_id)
+    row["paid_kind"] = _paid_kind(row)
+    users = _list_users()
+    return {
+        "row": row,
+        "plans": _rows(ocs().read("plan", page=1, limit=200)),
+        "parents": _user_parents(users),
+    }
+
+
+@app.put("/api/customers/{ocs_user_id}")
+def update_customer(ocs_user_id: int, payload: CustomerIn, user: str = Depends(current_user)) -> dict[str, Any]:
+    return _update_ocs_customer(ocs_user_id, payload)
+
+
+@app.delete("/api/customers/{ocs_user_id}")
+def delete_customer(ocs_user_id: int, user: str = Depends(current_user)) -> dict[str, Any]:
+    return _delete_ocs_customer(ocs_user_id)
 
 
 @app.post("/api/customers/{ocs_user_id}/note")

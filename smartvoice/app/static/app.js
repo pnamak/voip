@@ -34,6 +34,9 @@ reportState["blocked-ip"] = "";
 
 let lastCreated = null;
 let creatingView = null;
+let editingId = null;
+let bulkOpen = false;
+let selectedCustomerIds = new Set();
 
 const BASE = window.location.pathname.indexOf("/smartvoice") === 0 ? "/smartvoice" : "";
 
@@ -145,29 +148,18 @@ const views = {
     async customers() {
         const data = await api("/api/customers");
         const creating = creatingView === "customers";
+        const editing = !creating && editingId != null;
+        const record = editing ? (data.rows || []).find((row) => String(row.id) === String(editingId)) : null;
+        const selected = (data.rows || []).filter((row) => selectedCustomerIds.has(Number(row.id)));
         document.getElementById("view").innerHTML = `
             ${creating ? userCreateForm("createCustomer", "Create customer", data, { requireCompany: false, postpaidLocked: false, kind: "Customer" }) : ""}
-            ${!creating && lastCreated && lastCreated.kind === "Customer" ? createdRecordCard() : ""}
-            ${creating ? "" : `<div class="card">
-                <div class="toolbar">
-                    <h3>Customers</h3>
-                    <button class="btn" type="button" onclick="startCreate('customers')">New customer</button>
-                </div>
-                ${table(
-                    ["ID", "Username", "Name", "Email", "Type", "OCS credit", "Plan", "Active"],
-                    data.rows.map((r) => [
-                        r.id,
-                        r.username,
-                        `${r.firstname || ""} ${r.lastname || ""}`.trim(),
-                        r.email || "",
-                        r.paid_kind,
-                        money(r.credit),
-                        r.idPlanname || r.id_plan,
-                        Number(r.active) === 1 ? "yes" : "no",
-                    ]),
-                )}
-            </div>`}
+            ${editing && record ? userCreateForm("saveCustomer", "Save customer", data, { requireCompany: false, postpaidLocked: false, kind: "Customer", record }) : ""}
+            ${editing && !record ? `<div class="card"><p class="err">Customer not found.</p><button class="btn ghost" type="button" onclick="cancelCreate()">Back to list</button></div>` : ""}
+            ${!creating && !editing && lastCreated && lastCreated.kind === "Customer" ? createdRecordCard() : ""}
+            ${!creating && !editing && bulkOpen ? bulkCustomerForm(data, selected) : ""}
+            ${creating || editing ? "" : customerListCard(data)}
         `;
+        restoreCustomerSelection();
     },
     async products() {
         const data = await api("/api/products");
@@ -449,13 +441,38 @@ function fillSecret(button, field) {
 
 function startCreate(viewName) {
     creatingView = viewName;
+    editingId = null;
+    bulkOpen = false;
     lastCreated = null;
+    selectedCustomerIds = new Set();
     show(viewName);
 }
 
-function cancelCreate() {
-    const viewName = creatingView || "customers";
+function startEditCustomer(id) {
     creatingView = null;
+    editingId = Number(id);
+    bulkOpen = false;
+    lastCreated = null;
+    show("customers");
+}
+
+function openBulkCustomers() {
+    if (!selectedCustomerIds.size) {
+        alert("Select at least one customer.");
+        return;
+    }
+    creatingView = null;
+    editingId = null;
+    lastCreated = null;
+    bulkOpen = true;
+    show("customers");
+}
+
+function cancelCreate() {
+    const viewName = creatingView === "resellers" ? "resellers" : "customers";
+    creatingView = null;
+    editingId = null;
+    bulkOpen = false;
     show(viewName);
 }
 
@@ -502,13 +519,17 @@ function createdRecordCard() {
     const paid = Number(row.typepaid) === 1 ? "Postpaid" : "Prepaid";
     const active = Number(row.active) === 1 ? "Active" : "Inactive";
     const unlimited = (value) => (value === -1 || value === "-1" ? "Unlimited" : value);
+    const title = item.action === "updated" ? `${item.kind} updated on the OCS` : `${item.kind} created on the OCS`;
+    const secretLine = item.password
+        ? `<p>Username <code>${esc(item.username)}</code> · Password / SIP secret <code>${esc(item.password)}</code></p>
+        <p class="muted">Copy the SIP secret now. It is not stored in the BSS.</p>`
+        : `<p>Username <code>${esc(item.username)}</code></p>`;
     return `<div class="card credentials">
         <div class="toolbar">
-            <h3>${esc(item.kind)} created on the OCS</h3>
+            <h3>${esc(title)}</h3>
             <button class="btn ghost" type="button" onclick="dismissCreated()">Close</button>
         </div>
-        <p>Username <code>${esc(item.username)}</code> · Password / SIP secret <code>${esc(item.password)}</code></p>
-        <p class="muted">Copy the SIP secret now. It is not stored in the BSS. A SIP account is created with this username for client users.</p>
+        ${secretLine}
         ${profileSection("General", [
             ["Name", esc(name)],
             ["Company", esc(row.company_name)],
@@ -544,23 +565,39 @@ function createdRecordCard() {
     </div>`;
 }
 
+function optionSelected(current, value) {
+    return String(current) === String(value) ? " selected" : "";
+}
+
+function inputVal(record, name, fallback) {
+    if (!record || record[name] == null || record[name] === "") return fallback == null ? "" : fallback;
+    return record[name];
+}
+
 function userCreateForm(handler, submitLabel, data, optionsCfg) {
+    const record = optionsCfg.record || null;
+    const editing = Boolean(record);
     const plans = data.plans || [];
     const parents = data.parents || [];
-    const defaultPlan = plans[0] ? plans[0].id : "";
-    const parentOpts = options(parents, "id", (p) => `${p.username}${p.company_name ? " — " + p.company_name : ""} (${p.kind})`, 1);
+    const defaultPlan = record && record.id_plan ? record.id_plan : (plans[0] ? plans[0].id : "");
+    const parentOpts = options(parents, "id", (p) => `${p.username}${p.company_name ? " — " + p.company_name : ""} (${p.kind})`, record ? record.id_user : 1);
     const planOpts = options(plans, "id", (p) => p.name, defaultPlan);
+    const typeValue = record ? Number(record.typepaid || 0) : 0;
     const typeField = optionsCfg.postpaidLocked
         ? `<label>Account type <select name="typepaid" disabled><option value="1" selected>Postpaid</option></select></label>`
-        : `<label>Account type <select name="typepaid"><option value="0">Prepaid</option><option value="1">Postpaid</option></select></label>`;
+        : `<label>Account type <select name="typepaid"><option value="0"${optionSelected(typeValue, 0)}>Prepaid</option><option value="1"${optionSelected(typeValue, 1)}>Postpaid</option></select></label>`;
     const kind = optionsCfg.kind || "Customer";
+    const language = inputVal(record, "language", "en");
+    const active = record ? Number(record.active == null ? 1 : record.active) : 1;
+    const restriction = record ? Number(record.restriction || 0) : 0;
+    const recordCall = record ? Number(record.record_call || 0) : 0;
     return `
-        <form class="form-create card" data-require-company="${optionsCfg.requireCompany ? "1" : "0"}" novalidate onsubmit="return ${handler}(event)">
+        <form class="form-create card" data-mode="${editing ? "edit" : "create"}" data-id="${editing ? esc(record.id) : ""}" data-require-company="${optionsCfg.requireCompany ? "1" : "0"}" novalidate onsubmit="return ${handler}(event)">
             <div class="toolbar">
-                <h3>New ${esc(kind.toLowerCase())}</h3>
+                <h3>${editing ? `Edit ${esc(kind.toLowerCase())}` : `New ${esc(kind.toLowerCase())}`}</h3>
                 <button class="btn ghost" type="button" onclick="cancelCreate()">Cancel</button>
             </div>
-            <p class="muted">Use the tabs for general, personal, and supplementary details, then create the ${esc(kind.toLowerCase())} on the MagnusBilling OCS.</p>
+            <p class="muted">${editing ? "Update the tabs, then save the customer on the MagnusBilling OCS. Leave password blank to keep the current SIP secret." : `Use the tabs for general, personal, and supplementary details, then create the ${esc(kind.toLowerCase())} on the MagnusBilling OCS.`}</p>
             <div class="tabs" role="tablist">
                 <button type="button" class="tab-btn active" data-tab="general" onclick="switchUserTab(this, 'general')">General</button>
                 <button type="button" class="tab-btn" data-tab="personal" onclick="switchUserTab(this, 'personal')">Personal</button>
@@ -569,53 +606,59 @@ function userCreateForm(handler, submitLabel, data, optionsCfg) {
             <div class="tab-panel active" data-tab="general">
                 <label>Username
                     <span class="with-action">
-                        <input name="username" minlength="4" maxlength="20" placeholder="4-20 characters, no spaces">
-                        <button class="btn ghost" type="button" onclick="fillSecret(this, 'username')">Generate</button>
+                        <input name="username" minlength="4" maxlength="20" placeholder="4-20 characters, no spaces" value="${esc(inputVal(record, "username", ""))}">
+                        ${editing ? "" : `<button class="btn ghost" type="button" onclick="fillSecret(this, 'username')">Generate</button>`}
                     </span>
                 </label>
                 <label>Password
                     <span class="with-action">
-                        <input name="password" minlength="6" maxlength="100" autocomplete="new-password" placeholder="Also used as the SIP secret">
+                        <input name="password" minlength="6" maxlength="100" autocomplete="new-password" placeholder="${editing ? "Leave blank to keep current" : "Also used as the SIP secret"}">
                         <button class="btn ghost" type="button" onclick="fillSecret(this, 'password')">Generate</button>
                     </span>
                 </label>
                 <label>Plan <select name="id_plan">${planOpts}</select></label>
                 <label>Parent <select name="id_user">${parentOpts || '<option value="1">Admin</option>'}</select></label>
-                <label>Language <select name="language"><option value="en">English</option><option value="es">Spanish</option><option value="pt_BR">Portuguese</option><option value="fr">French</option><option value="it">Italian</option></select></label>
-                <label>Status <select name="active"><option value="1">Active</option><option value="0">Inactive</option></select></label>
+                <label>Language <select name="language">
+                    <option value="en"${optionSelected(language, "en")}>English</option>
+                    <option value="es"${optionSelected(language, "es")}>Spanish</option>
+                    <option value="pt_BR"${optionSelected(language, "pt_BR")}>Portuguese</option>
+                    <option value="fr"${optionSelected(language, "fr")}>French</option>
+                    <option value="it"${optionSelected(language, "it")}>Italian</option>
+                </select></label>
+                <label>Status <select name="active"><option value="1"${optionSelected(active, 1)}>Active</option><option value="0"${optionSelected(active, 0)}>Inactive</option></select></label>
                 ${typeField}
-                <label>Opening credit <input name="credit" type="number" step="0.0001" value="0"></label>
-                <label>Credit limit <input name="creditlimit" type="number" step="1" value="0"></label>
+                <label>${editing ? "OCS credit" : "Opening credit"} <input name="credit" type="number" step="0.0001" value="${esc(inputVal(record, "credit", 0))}"></label>
+                <label>Credit limit <input name="creditlimit" type="number" step="1" value="${esc(inputVal(record, "creditlimit", 0))}"></label>
             </div>
             <div class="tab-panel" data-tab="personal">
-                <label>First name <input name="firstname"></label>
-                <label>Last name <input name="lastname"></label>
-                <label>Company <input name="company_name"></label>
-                <label>Trade name <input name="commercial_name"></label>
-                <label>Website <input name="company_website"></label>
-                <label>Email <input name="email" type="email" placeholder="Must be unique on the OCS"></label>
-                <label>Email 2 <input name="email2" type="email"></label>
-                <label>Phone <input name="phone"></label>
-                <label>Mobile <input name="mobile"></label>
-                <label>VAT <input name="vat"></label>
-                <label>Document <input name="doc"></label>
-                <label class="span">Address <input name="address"></label>
-                <label>City <input name="city"></label>
-                <label>Neighborhood <input name="neighborhood"></label>
-                <label>State <input name="state"></label>
-                <label>Country <input name="country" placeholder="e.g. VUT"></label>
-                <label>Zip code <input name="zipcode"></label>
+                <label>First name <input name="firstname" value="${esc(inputVal(record, "firstname", ""))}"></label>
+                <label>Last name <input name="lastname" value="${esc(inputVal(record, "lastname", ""))}"></label>
+                <label>Company <input name="company_name" value="${esc(inputVal(record, "company_name", ""))}"></label>
+                <label>Trade name <input name="commercial_name" value="${esc(inputVal(record, "commercial_name", ""))}"></label>
+                <label>Website <input name="company_website" value="${esc(inputVal(record, "company_website", ""))}"></label>
+                <label>Email <input name="email" type="email" placeholder="Must be unique on the OCS" value="${esc(inputVal(record, "email", ""))}"></label>
+                <label>Email 2 <input name="email2" type="email" value="${esc(inputVal(record, "email2", ""))}"></label>
+                <label>Phone <input name="phone" value="${esc(inputVal(record, "phone", ""))}"></label>
+                <label>Mobile <input name="mobile" value="${esc(inputVal(record, "mobile", ""))}"></label>
+                <label>VAT <input name="vat" value="${esc(inputVal(record, "vat", ""))}"></label>
+                <label>Document <input name="doc" value="${esc(inputVal(record, "doc", ""))}"></label>
+                <label class="span">Address <input name="address" value="${esc(inputVal(record, "address", ""))}"></label>
+                <label>City <input name="city" value="${esc(inputVal(record, "city", ""))}"></label>
+                <label>Neighborhood <input name="neighborhood" value="${esc(inputVal(record, "neighborhood", ""))}"></label>
+                <label>State <input name="state" value="${esc(inputVal(record, "state", ""))}"></label>
+                <label>Country <input name="country" placeholder="e.g. VUT" value="${esc(inputVal(record, "country", ""))}"></label>
+                <label>Zip code <input name="zipcode" value="${esc(inputVal(record, "zipcode", ""))}"></label>
             </div>
             <div class="tab-panel" data-tab="supplementary">
-                <label>Local prefix <input name="prefix_local" placeholder="Optional dial prefix"></label>
-                <label>Call limit <input name="calllimit" type="number" value="-1" title="-1 is unlimited"></label>
-                <label>SIP account limit <input name="sipaccountlimit" type="number" value="-1"></label>
-                <label>Inbound call limit <input name="inbound_call_limit" type="number" value="-1"></label>
-                <label>CPS limit <input name="cpslimit" type="number" value="-1"></label>
-                <label>Restriction <select name="restriction"><option value="0">None</option><option value="1">Cannot dial</option><option value="2">Cannot receive</option></select></label>
-                <label>Record calls <select name="record_call"><option value="0">No</option><option value="1">Yes</option></select></label>
-                <label class="span">Description <textarea name="description"></textarea></label>
-                <label class="span">BSS note <input name="note"></label>
+                <label>Local prefix <input name="prefix_local" placeholder="Optional dial prefix" value="${esc(inputVal(record, "prefix_local", ""))}"></label>
+                <label>Call limit <input name="calllimit" type="number" value="${esc(inputVal(record, "calllimit", -1))}" title="-1 is unlimited"></label>
+                <label>SIP account limit <input name="sipaccountlimit" type="number" value="${esc(inputVal(record, "sipaccountlimit", -1))}"></label>
+                <label>Inbound call limit <input name="inbound_call_limit" type="number" value="${esc(inputVal(record, "inbound_call_limit", -1))}"></label>
+                <label>CPS limit <input name="cpslimit" type="number" value="${esc(inputVal(record, "cpslimit", -1))}"></label>
+                <label>Restriction <select name="restriction"><option value="0"${optionSelected(restriction, 0)}>None</option><option value="1"${optionSelected(restriction, 1)}>Cannot dial</option><option value="2"${optionSelected(restriction, 2)}>Cannot receive</option></select></label>
+                <label>Record calls <select name="record_call"><option value="0"${optionSelected(recordCall, 0)}>No</option><option value="1"${optionSelected(recordCall, 1)}>Yes</option></select></label>
+                <label class="span">Description <textarea name="description">${esc(inputVal(record, "description", ""))}</textarea></label>
+                <label class="span">BSS note <input name="note" value="${esc(inputVal(record, "bss_note", inputVal(record, "note", "")))}"></label>
             </div>
             <div class="actions">
                 <button class="btn ghost" type="button" onclick="stepUserTab(this, -1)">Back</button>
@@ -639,10 +682,14 @@ function formObject(form) {
         raw[key] = Number(raw[key]);
     });
     floats.forEach((key) => {
-        raw[key] = Number(raw[key] || 0);
+        if (!(key in raw) || raw[key] === "") {
+            delete raw[key];
+            return;
+        }
+        raw[key] = Number(raw[key]);
     });
     Object.keys(raw).forEach((key) => {
-        if (raw[key] === "") delete raw[key];
+        if (raw[key] === "" && form.dataset.mode !== "edit") delete raw[key];
     });
     return raw;
 }
@@ -650,10 +697,12 @@ function formObject(form) {
 function missingCreateFields(form) {
     const checks = [
         ["username", "general", "Username"],
-        ["password", "general", "Password"],
         ["id_plan", "general", "Plan"],
         ["firstname", "personal", "First name"],
     ];
+    if (form.dataset.mode !== "edit") {
+        checks.splice(1, 0, ["password", "general", "Password"]);
+    }
     if (form.dataset.requireCompany === "1") {
         checks.push(["company_name", "personal", "Company"]);
     }
@@ -664,6 +713,201 @@ function missingCreateFields(form) {
         }
     }
     return null;
+}
+
+function customerListCard(data) {
+    const rows = data.rows || [];
+    const selectedCount = selectedCustomerIds.size;
+    return `<div class="card">
+        <div class="toolbar">
+            <h3>Customers</h3>
+            <div class="toolbar-actions">
+                <button class="btn ghost" type="button" onclick="openBulkCustomers()">Bulk update</button>
+                <button class="btn ghost danger" type="button" onclick="bulkDeleteCustomers()">Delete selected</button>
+                <button class="btn" type="button" onclick="startCreate('customers')">New customer</button>
+            </div>
+        </div>
+        <p class="muted">${selectedCount ? `${selectedCount} selected` : "Select customers to edit in bulk, or open one to change."}</p>
+        ${customerTable(rows)}
+    </div>`;
+}
+
+function customerTable(rows) {
+    if (!rows.length) return '<p class="muted">No records yet.</p>';
+    return `<table>
+        <thead><tr>
+            <th><input type="checkbox" id="customer-check-all" onchange="toggleAllCustomers(this)"></th>
+            <th>ID</th><th>Username</th><th>Name</th><th>Email</th><th>Type</th><th>OCS credit</th><th>Plan</th><th>Active</th><th></th>
+        </tr></thead>
+        <tbody>${rows.map((r) => `<tr>
+            <td><input type="checkbox" class="row-check" value="${esc(r.id)}" onchange="toggleCustomerRow(this)"></td>
+            <td>${esc(r.id)}</td>
+            <td>${esc(r.username)}</td>
+            <td>${esc(`${r.firstname || ""} ${r.lastname || ""}`.trim())}</td>
+            <td>${esc(r.email || "")}</td>
+            <td>${esc(r.paid_kind)}</td>
+            <td>${money(r.credit)}</td>
+            <td>${esc(r.idPlanname || r.id_plan || "")}</td>
+            <td>${Number(r.active) === 1 ? "yes" : "no"}</td>
+            <td class="row-actions">
+                <button class="btn ghost" type="button" onclick="startEditCustomer(${Number(r.id)})">Edit</button>
+                <button class="btn ghost danger" type="button" onclick="deleteCustomer(${Number(r.id)})">Delete</button>
+            </td>
+        </tr>`).join("")}</tbody>
+    </table>`;
+}
+
+function restoreCustomerSelection() {
+    document.querySelectorAll(".row-check").forEach((box) => {
+        box.checked = selectedCustomerIds.has(Number(box.value));
+    });
+    const all = document.getElementById("customer-check-all");
+    const boxes = document.querySelectorAll(".row-check");
+    if (all && boxes.length) {
+        all.checked = Array.from(boxes).every((box) => box.checked);
+    }
+}
+
+function toggleCustomerRow(box) {
+    const id = Number(box.value);
+    if (box.checked) selectedCustomerIds.add(id);
+    else selectedCustomerIds.delete(id);
+}
+
+function toggleAllCustomers(box) {
+    document.querySelectorAll(".row-check").forEach((item) => {
+        item.checked = box.checked;
+        toggleCustomerRow(item);
+    });
+}
+
+function bulkCustomerForm(data, selected) {
+    const plans = data.plans || [];
+    const parents = data.parents || [];
+    const names = selected.map((row) => row.username).join(", ");
+    return `<form class="form-create card" novalidate onsubmit="return applyBulkCustomers(event)">
+        <div class="toolbar">
+            <h3>Bulk update ${selected.length} customer${selected.length === 1 ? "" : "s"}</h3>
+            <button class="btn ghost" type="button" onclick="cancelCreate()">Cancel</button>
+        </div>
+        <p class="muted">Empty fields are left unchanged. Applying to: ${esc(names)}</p>
+        <div class="tab-panel active">
+            <label>Plan <select name="id_plan"><option value="">No change</option>${options(plans, "id", (p) => p.name, "")}</select></label>
+            <label>Parent <select name="id_user"><option value="">No change</option>${options(parents, "id", (p) => `${p.username}${p.company_name ? " — " + p.company_name : ""}`, "")}</select></label>
+            <label>Language <select name="language"><option value="">No change</option><option value="en">English</option><option value="es">Spanish</option><option value="pt_BR">Portuguese</option><option value="fr">French</option><option value="it">Italian</option></select></label>
+            <label>Status <select name="active"><option value="">No change</option><option value="1">Active</option><option value="0">Inactive</option></select></label>
+            <label>Account type <select name="typepaid"><option value="">No change</option><option value="0">Prepaid</option><option value="1">Postpaid</option></select></label>
+            <label>OCS credit <input name="credit" type="number" step="0.0001" placeholder="No change"></label>
+            <label>Credit limit <input name="creditlimit" type="number" step="1" placeholder="No change"></label>
+            <label>Call limit <input name="calllimit" type="number" placeholder="No change"></label>
+            <label>Restriction <select name="restriction"><option value="">No change</option><option value="0">None</option><option value="1">Cannot dial</option><option value="2">Cannot receive</option></select></label>
+            <label>Record calls <select name="record_call"><option value="">No change</option><option value="0">No</option><option value="1">Yes</option></select></label>
+            <label>Local prefix <input name="prefix_local" placeholder="No change"></label>
+        </div>
+        <div class="actions">
+            <button class="btn" type="submit">Apply to selected</button>
+            <p class="err form-err"></p>
+        </div>
+    </form>`;
+}
+
+async function saveCustomer(event) {
+    event.preventDefault();
+    const form = event.target;
+    const err = form.querySelector(".form-err");
+    if (err) err.textContent = "";
+    const missing = missingCreateFields(form);
+    if (missing) {
+        switchUserTab(form, missing.tab);
+        if (err) err.textContent = `${missing.label} is required`;
+        const el = form.elements[missing.name];
+        if (el && el.focus) el.focus();
+        return false;
+    }
+    try {
+        const result = await api("/api/customers/" + form.dataset.id, { method: "PUT", body: JSON.stringify(formObject(form)) });
+        const creds = result.credentials || {};
+        lastCreated = {
+            kind: "Customer",
+            action: "updated",
+            username: creds.username || (result.data && result.data.username) || "",
+            password: creds.password || "",
+            data: result.data || {},
+        };
+        creatingView = null;
+        editingId = null;
+        show("customers");
+    } catch (exc) {
+        if (err) err.textContent = exc.message || "Save failed";
+        else alert(exc.message || "Save failed");
+    }
+    return false;
+}
+
+async function deleteCustomer(id) {
+    if (!confirm("Delete this customer from the MagnusBilling OCS? This cannot be undone.")) return false;
+    try {
+        await api("/api/customers/" + id, { method: "DELETE" });
+        selectedCustomerIds.delete(Number(id));
+        lastCreated = null;
+        editingId = null;
+        show("customers");
+    } catch (exc) {
+        alert(exc.message || "Delete failed");
+    }
+    return false;
+}
+
+async function bulkDeleteCustomers() {
+    const ids = Array.from(selectedCustomerIds);
+    if (!ids.length) {
+        alert("Select at least one customer.");
+        return false;
+    }
+    if (!confirm(`Delete ${ids.length} customer${ids.length === 1 ? "" : "s"} from the MagnusBilling OCS? This cannot be undone.`)) return false;
+    try {
+        const result = await api("/api/customers/bulk", { method: "POST", body: JSON.stringify({ ids, action: "delete" }) });
+        selectedCustomerIds = new Set();
+        bulkOpen = false;
+        lastCreated = null;
+        show("customers");
+        if (result.errors && result.errors.length) {
+            alert(result.errors.map((item) => `#${item.id}: ${item.detail}`).join("\n"));
+        }
+    } catch (exc) {
+        alert(exc.message || "Bulk delete failed");
+    }
+    return false;
+}
+
+async function applyBulkCustomers(event) {
+    event.preventDefault();
+    const form = event.target;
+    const err = form.querySelector(".form-err");
+    if (err) err.textContent = "";
+    const ids = Array.from(selectedCustomerIds);
+    if (!ids.length) {
+        if (err) err.textContent = "Select at least one customer";
+        return false;
+    }
+    const fields = formObject(form);
+    if (!Object.keys(fields).length) {
+        if (err) err.textContent = "Choose at least one field to update";
+        return false;
+    }
+    try {
+        const result = await api("/api/customers/bulk", { method: "POST", body: JSON.stringify(Object.assign({ ids, action: "update" }, fields)) });
+        bulkOpen = false;
+        lastCreated = null;
+        if (result.errors && result.errors.length) {
+            alert(result.errors.map((item) => `#${item.id}: ${item.detail}`).join("\n"));
+        }
+        show("customers");
+    } catch (exc) {
+        if (err) err.textContent = exc.message || "Bulk update failed";
+        else alert(exc.message || "Bulk update failed");
+    }
+    return false;
 }
 
 async function submitUser(event, path, kind, viewName) {
@@ -689,6 +933,7 @@ async function submitUser(event, path, kind, viewName) {
             data: result.data || {},
         };
         creatingView = null;
+        editingId = null;
         show(viewName);
     } catch (exc) {
         if (err) err.textContent = exc.message || "Create failed";

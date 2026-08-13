@@ -92,7 +92,10 @@ class BssAppTests(unittest.TestCase):
         self.assertIn(">General<", js)
         self.assertIn(">Personal<", js)
         self.assertIn(">Supplementary<", js)
-        self.assertIn("createdRecordCard", js)
+        self.assertIn("startEditCustomer", js)
+        self.assertIn("Bulk update", js)
+        self.assertIn("applyBulkCustomers", js)
+        self.assertIn("deleteCustomer(", js)
         self.assertIn(".tab-panel", css)
         self.assertIn(".tab-btn.active", css)
 
@@ -199,6 +202,65 @@ class BssAppTests(unittest.TestCase):
             json={"username": "portvila", "firstname": "Marie", "password": "OtherPass9"},
         )
         self.assertEqual(duplicate.status_code, 400, duplicate.text)
+
+    def test_customer_edit_delete_and_bulk(self):
+        self._login()
+        first = self.client.post(
+            "/api/customers",
+            json={"username": "edita", "firstname": "Edit", "password": "EditPass91", "city": "Luganville", "credit": 8},
+        )
+        second = self.client.post(
+            "/api/customers",
+            json={"username": "editb", "firstname": "Bulk", "password": "BulkPass91", "credit": 3},
+        )
+        self.assertEqual(first.status_code, 200, first.text)
+        self.assertEqual(second.status_code, 200, second.text)
+        id_a = first.json()["data"]["id"]
+        id_b = second.json()["data"]["id"]
+        listed = self.client.get("/api/customers").json()["rows"]
+        self.assertTrue(all("password" not in row for row in listed))
+        updated = self.client.put(
+            f"/api/customers/{id_a}",
+            json={
+                "username": "edita",
+                "firstname": "Marie",
+                "lastname": "Kalotiti",
+                "city": "Port Vila",
+                "typepaid": 1,
+                "id_plan": 2,
+                "note": "edited from BSS",
+            },
+        )
+        self.assertEqual(updated.status_code, 200, updated.text)
+        body = updated.json()["data"]
+        self.assertEqual(body["firstname"], "Marie")
+        self.assertEqual(body["city"], "Port Vila")
+        self.assertEqual(int(body["typepaid"]), 1)
+        self.assertEqual(int(body["id_plan"]), 2)
+        self.assertEqual(float(body["credit"]), 8)
+        self.assertNotIn("password", body)
+        fetched = self.client.get(f"/api/customers/{id_a}").json()["row"]
+        self.assertEqual(fetched["lastname"], "Kalotiti")
+        self.assertEqual(fetched["bss_note"], "edited from BSS")
+        bulk = self.client.post(
+            "/api/customers/bulk",
+            json={"ids": [id_a, id_b], "action": "update", "active": 0, "calllimit": 4},
+        )
+        self.assertEqual(bulk.status_code, 200, bulk.text)
+        self.assertEqual(sorted(bulk.json()["updated"]), sorted([id_a, id_b]))
+        by_name = {row["username"]: row for row in self.client.get("/api/customers").json()["rows"]}
+        self.assertEqual(int(by_name["edita"]["active"]), 0)
+        self.assertEqual(int(by_name["editb"]["calllimit"]), 4)
+        self.assertEqual(self.client.delete("/api/customers/10").status_code, 404)
+        deleted = self.client.delete(f"/api/customers/{id_b}")
+        self.assertEqual(deleted.status_code, 200, deleted.text)
+        names = [row["username"] for row in self.client.get("/api/customers").json()["rows"]]
+        self.assertNotIn("editb", names)
+        self.assertIn("edita", names)
+        gone = self.client.post("/api/customers/bulk", json={"ids": [id_a], "action": "delete"})
+        self.assertEqual(gone.status_code, 200, gone.text)
+        names = [row["username"] for row in self.client.get("/api/customers").json()["rows"]]
+        self.assertNotIn("edita", names)
 
     def test_reseller_and_product_create(self):
         self._login()
