@@ -33,6 +33,7 @@ const reportState = Object.fromEntries(REPORT_MENU.map(([slug]) => [slug, ""]));
 reportState["blocked-ip"] = "";
 
 let lastCreated = null;
+let creatingView = null;
 
 const BASE = window.location.pathname.indexOf("/smartvoice") === 0 ? "/smartvoice" : "";
 
@@ -143,23 +144,29 @@ const views = {
     },
     async customers() {
         const data = await api("/api/customers");
+        const creating = creatingView === "customers";
         document.getElementById("view").innerHTML = `
-            ${credentialsCard("Customer")}
-            ${userCreateForm("createCustomer", "Create customer", data, { requireCompany: false, postpaidLocked: false })}
-            <div class="card">${table(
-                ["ID", "Username", "Name", "Email", "Type", "OCS credit", "Plan", "Active", "Note"],
-                data.rows.map((r) => [
-                    r.id,
-                    r.username,
-                    `${r.firstname || ""} ${r.lastname || ""}`.trim(),
-                    r.email || "",
-                    r.paid_kind,
-                    money(r.credit),
-                    r.idPlanname || r.id_plan,
-                    Number(r.active) === 1 ? "yes" : "no",
-                    r.bss_note || "",
-                ]),
-            )}</div>
+            ${creating ? userCreateForm("createCustomer", "Create customer", data, { requireCompany: false, postpaidLocked: false, kind: "Customer" }) : ""}
+            ${!creating && lastCreated && lastCreated.kind === "Customer" ? createdRecordCard() : ""}
+            ${creating ? "" : `<div class="card">
+                <div class="toolbar">
+                    <h3>Customers</h3>
+                    <button class="btn" type="button" onclick="startCreate('customers')">New customer</button>
+                </div>
+                ${table(
+                    ["ID", "Username", "Name", "Email", "Type", "OCS credit", "Plan", "Active"],
+                    data.rows.map((r) => [
+                        r.id,
+                        r.username,
+                        `${r.firstname || ""} ${r.lastname || ""}`.trim(),
+                        r.email || "",
+                        r.paid_kind,
+                        money(r.credit),
+                        r.idPlanname || r.id_plan,
+                        Number(r.active) === 1 ? "yes" : "no",
+                    ]),
+                )}
+            </div>`}
         `;
     },
     async products() {
@@ -193,10 +200,17 @@ const views = {
     },
     async resellers() {
         const data = await api("/api/resellers");
+        const creating = creatingView === "resellers";
         document.getElementById("view").innerHTML = `
-            ${credentialsCard("Reseller")}
-            ${userCreateForm("createReseller", "Create reseller", data, { requireCompany: true, postpaidLocked: true })}
-            <div class="card">${table(["ID", "Username", "Company", "Customers", "Downstream wallet", "Own credit"], data.rows.map((r) => [r.id, r.username, r.company_name, r.customers, money(r.customer_wallet), money(r.credit)]))}</div>
+            ${creating ? userCreateForm("createReseller", "Create reseller", data, { requireCompany: true, postpaidLocked: true, kind: "Reseller" }) : ""}
+            ${!creating && lastCreated && lastCreated.kind === "Reseller" ? createdRecordCard() : ""}
+            ${creating ? "" : `<div class="card">
+                <div class="toolbar">
+                    <h3>Resellers</h3>
+                    <button class="btn" type="button" onclick="startCreate('resellers')">New reseller</button>
+                </div>
+                ${table(["ID", "Username", "Company", "Customers", "Downstream wallet", "Own credit"], data.rows.map((r) => [r.id, r.username, r.company_name, r.customers, money(r.customer_wallet), money(r.credit)]))}
+            </div>`}
         `;
     },
     async sip() {
@@ -433,14 +447,100 @@ function fillSecret(button, field) {
     if (input) input.value = field === "username" ? randomUsername() : randomPassword();
 }
 
-function credentialsCard(kind) {
-    if (!lastCreated || lastCreated.kind !== kind) return "";
-    const creds = lastCreated;
+function startCreate(viewName) {
+    creatingView = viewName;
     lastCreated = null;
+    show(viewName);
+}
+
+function cancelCreate() {
+    const viewName = creatingView || "customers";
+    creatingView = null;
+    show(viewName);
+}
+
+function dismissCreated() {
+    const viewName = lastCreated && lastCreated.kind === "Reseller" ? "resellers" : "customers";
+    lastCreated = null;
+    show(viewName);
+}
+
+function switchUserTab(el, name) {
+    const form = el.closest("form");
+    if (!form) return;
+    form.querySelectorAll(".tab-btn").forEach((btn) => btn.classList.toggle("active", btn.dataset.tab === name));
+    form.querySelectorAll(".tab-panel").forEach((panel) => panel.classList.toggle("active", panel.dataset.tab === name));
+}
+
+function stepUserTab(el, delta) {
+    const form = el.closest("form");
+    const tabs = ["general", "personal", "supplementary"];
+    const current = (form.querySelector(".tab-btn.active") || {}).dataset.tab || "general";
+    const next = tabs[Math.max(0, Math.min(tabs.length - 1, tabs.indexOf(current) + delta))];
+    switchUserTab(form, next);
+}
+
+function profileValue(value) {
+    if (value === undefined || value === null) return "";
+    return String(value).trim();
+}
+
+function profileSection(title, pairs) {
+    const items = pairs.filter(([, value]) => profileValue(value) !== "");
+    if (!items.length) return "";
+    return `<div class="profile-section">
+        <h4>${esc(title)}</h4>
+        <dl class="profile-grid">${items.map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${value}</dd></div>`).join("")}</dl>
+    </div>`;
+}
+
+function createdRecordCard() {
+    const item = lastCreated;
+    if (!item) return "";
+    const row = item.data || {};
+    const name = `${row.firstname || ""} ${row.lastname || ""}`.trim();
+    const paid = Number(row.typepaid) === 1 ? "Postpaid" : "Prepaid";
+    const active = Number(row.active) === 1 ? "Active" : "Inactive";
+    const unlimited = (value) => (value === -1 || value === "-1" ? "Unlimited" : value);
     return `<div class="card credentials">
-        <h3>${esc(kind)} created on the OCS</h3>
-        <p>Username <code>${esc(creds.username)}</code> · Password / SIP secret <code>${esc(creds.password)}</code></p>
-        <p class="muted">MagnusBilling creates a SIP account with this username and password. Copy it now; it is not stored in the BSS.</p>
+        <div class="toolbar">
+            <h3>${esc(item.kind)} created on the OCS</h3>
+            <button class="btn ghost" type="button" onclick="dismissCreated()">Close</button>
+        </div>
+        <p>Username <code>${esc(item.username)}</code> · Password / SIP secret <code>${esc(item.password)}</code></p>
+        <p class="muted">Copy the SIP secret now. It is not stored in the BSS. A SIP account is created with this username for client users.</p>
+        ${profileSection("General", [
+            ["Name", esc(name)],
+            ["Company", esc(row.company_name)],
+            ["Plan", esc(row.idPlanname || row.id_plan)],
+            ["Type", paid],
+            ["Status", active],
+            ["Opening credit", money(row.credit)],
+            ["Credit limit", row.creditlimit],
+            ["Language", esc(row.language)],
+        ])}
+        ${profileSection("Personal", [
+            ["Email", esc(row.email)],
+            ["Email 2", esc(row.email2)],
+            ["Phone", esc(row.phone)],
+            ["Mobile", esc(row.mobile)],
+            ["Address", esc(row.address)],
+            ["City", esc(row.city)],
+            ["Neighborhood", esc(row.neighborhood)],
+            ["State", esc(row.state)],
+            ["Country", esc(row.country)],
+            ["Zip code", esc(row.zipcode)],
+            ["VAT", esc(row.vat)],
+            ["Document", esc(row.doc)],
+        ])}
+        ${profileSection("Supplementary", [
+            ["Local prefix", esc(row.prefix_local)],
+            ["Call limit", unlimited(row.calllimit)],
+            ["SIP account limit", unlimited(row.sipaccountlimit)],
+            ["Inbound call limit", unlimited(row.inbound_call_limit)],
+            ["CPS limit", unlimited(row.cpslimit)],
+            ["Description", esc(row.description)],
+        ])}
     </div>`;
 }
 
@@ -451,61 +551,75 @@ function userCreateForm(handler, submitLabel, data, optionsCfg) {
     const parentOpts = options(parents, "id", (p) => `${p.username}${p.company_name ? " — " + p.company_name : ""} (${p.kind})`, 1);
     const planOpts = options(plans, "id", (p) => p.name, defaultPlan);
     const typeField = optionsCfg.postpaidLocked
-        ? `<label>Type <select name="typepaid" disabled><option value="1" selected>Postpaid</option></select></label>`
-        : `<label>Type <select name="typepaid"><option value="0">Prepaid</option><option value="1">Postpaid</option></select></label>`;
-    const companyReq = optionsCfg.requireCompany ? " required" : "";
+        ? `<label>Account type <select name="typepaid" disabled><option value="1" selected>Postpaid</option></select></label>`
+        : `<label>Account type <select name="typepaid"><option value="0">Prepaid</option><option value="1">Postpaid</option></select></label>`;
+    const kind = optionsCfg.kind || "Customer";
     return `
-        <form class="form form-create card" onsubmit="return ${handler}(event)">
-            <h3>Account</h3>
-            <label>Username
-                <span class="with-action">
-                    <input name="username" required minlength="4" maxlength="20" placeholder="4-20 chars, no spaces">
-                    <button class="btn ghost" type="button" onclick="fillSecret(this, 'username')">Generate</button>
-                </span>
-            </label>
-            <label>Password
-                <span class="with-action">
-                    <input name="password" required minlength="6" maxlength="100" autocomplete="new-password" placeholder="SIP secret">
-                    <button class="btn ghost" type="button" onclick="fillSecret(this, 'password')">Generate</button>
-                </span>
-            </label>
-            <label>Plan <select name="id_plan" required>${planOpts}</select></label>
-            <label>Parent <select name="id_user">${parentOpts || '<option value="1">Admin</option>'}</select></label>
-            <label>Language <select name="language"><option value="en">English</option><option value="es">Spanish</option><option value="pt_BR">Portuguese</option><option value="fr">French</option><option value="it">Italian</option></select></label>
-            <label>Status <select name="active"><option value="1">Active</option><option value="0">Inactive</option></select></label>
-            ${typeField}
-            <label>Opening credit <input name="credit" type="number" step="0.0001" value="0"></label>
-            <label>Credit limit <input name="creditlimit" type="number" step="1" value="0"></label>
-            <h3>Identity</h3>
-            <label>First name <input name="firstname" required></label>
-            <label>Last name <input name="lastname"></label>
-            <label>Company <input name="company_name"${companyReq}></label>
-            <label>Trade name <input name="commercial_name"></label>
-            <label>Website <input name="company_website"></label>
-            <label>Email <input name="email" type="email" placeholder="unique on the OCS"></label>
-            <label>Email 2 <input name="email2" type="email"></label>
-            <label>Phone <input name="phone"></label>
-            <label>Mobile <input name="mobile"></label>
-            <label>VAT <input name="vat"></label>
-            <label>Document <input name="doc"></label>
-            <h3>Address</h3>
-            <label>Address <input name="address"></label>
-            <label>City <input name="city"></label>
-            <label>Neighborhood <input name="neighborhood"></label>
-            <label>State <input name="state"></label>
-            <label>Country <input name="country" placeholder="e.g. VUT"></label>
-            <label>Zip code <input name="zipcode"></label>
-            <h3>Calling</h3>
-            <label>Local prefix <input name="prefix_local" placeholder="optional dial prefix"></label>
-            <label>Call limit <input name="calllimit" type="number" value="-1" title="-1 is unlimited"></label>
-            <label>SIP account limit <input name="sipaccountlimit" type="number" value="-1"></label>
-            <label>Inbound call limit <input name="inbound_call_limit" type="number" value="-1"></label>
-            <label>CPS limit <input name="cpslimit" type="number" value="-1"></label>
-            <label>Restriction <select name="restriction"><option value="0">None</option><option value="1">Cannot dial</option><option value="2">Cannot receive</option></select></label>
-            <label>Record calls <select name="record_call"><option value="0">No</option><option value="1">Yes</option></select></label>
-            <label class="span">Description <textarea name="description"></textarea></label>
-            <label class="span">BSS note <input name="note"></label>
+        <form class="form-create card" data-require-company="${optionsCfg.requireCompany ? "1" : "0"}" novalidate onsubmit="return ${handler}(event)">
+            <div class="toolbar">
+                <h3>New ${esc(kind.toLowerCase())}</h3>
+                <button class="btn ghost" type="button" onclick="cancelCreate()">Cancel</button>
+            </div>
+            <p class="muted">Use the tabs for general, personal, and supplementary details, then create the ${esc(kind.toLowerCase())} on the MagnusBilling OCS.</p>
+            <div class="tabs" role="tablist">
+                <button type="button" class="tab-btn active" data-tab="general" onclick="switchUserTab(this, 'general')">General</button>
+                <button type="button" class="tab-btn" data-tab="personal" onclick="switchUserTab(this, 'personal')">Personal</button>
+                <button type="button" class="tab-btn" data-tab="supplementary" onclick="switchUserTab(this, 'supplementary')">Supplementary</button>
+            </div>
+            <div class="tab-panel active" data-tab="general">
+                <label>Username
+                    <span class="with-action">
+                        <input name="username" minlength="4" maxlength="20" placeholder="4-20 characters, no spaces">
+                        <button class="btn ghost" type="button" onclick="fillSecret(this, 'username')">Generate</button>
+                    </span>
+                </label>
+                <label>Password
+                    <span class="with-action">
+                        <input name="password" minlength="6" maxlength="100" autocomplete="new-password" placeholder="Also used as the SIP secret">
+                        <button class="btn ghost" type="button" onclick="fillSecret(this, 'password')">Generate</button>
+                    </span>
+                </label>
+                <label>Plan <select name="id_plan">${planOpts}</select></label>
+                <label>Parent <select name="id_user">${parentOpts || '<option value="1">Admin</option>'}</select></label>
+                <label>Language <select name="language"><option value="en">English</option><option value="es">Spanish</option><option value="pt_BR">Portuguese</option><option value="fr">French</option><option value="it">Italian</option></select></label>
+                <label>Status <select name="active"><option value="1">Active</option><option value="0">Inactive</option></select></label>
+                ${typeField}
+                <label>Opening credit <input name="credit" type="number" step="0.0001" value="0"></label>
+                <label>Credit limit <input name="creditlimit" type="number" step="1" value="0"></label>
+            </div>
+            <div class="tab-panel" data-tab="personal">
+                <label>First name <input name="firstname"></label>
+                <label>Last name <input name="lastname"></label>
+                <label>Company <input name="company_name"></label>
+                <label>Trade name <input name="commercial_name"></label>
+                <label>Website <input name="company_website"></label>
+                <label>Email <input name="email" type="email" placeholder="Must be unique on the OCS"></label>
+                <label>Email 2 <input name="email2" type="email"></label>
+                <label>Phone <input name="phone"></label>
+                <label>Mobile <input name="mobile"></label>
+                <label>VAT <input name="vat"></label>
+                <label>Document <input name="doc"></label>
+                <label class="span">Address <input name="address"></label>
+                <label>City <input name="city"></label>
+                <label>Neighborhood <input name="neighborhood"></label>
+                <label>State <input name="state"></label>
+                <label>Country <input name="country" placeholder="e.g. VUT"></label>
+                <label>Zip code <input name="zipcode"></label>
+            </div>
+            <div class="tab-panel" data-tab="supplementary">
+                <label>Local prefix <input name="prefix_local" placeholder="Optional dial prefix"></label>
+                <label>Call limit <input name="calllimit" type="number" value="-1" title="-1 is unlimited"></label>
+                <label>SIP account limit <input name="sipaccountlimit" type="number" value="-1"></label>
+                <label>Inbound call limit <input name="inbound_call_limit" type="number" value="-1"></label>
+                <label>CPS limit <input name="cpslimit" type="number" value="-1"></label>
+                <label>Restriction <select name="restriction"><option value="0">None</option><option value="1">Cannot dial</option><option value="2">Cannot receive</option></select></label>
+                <label>Record calls <select name="record_call"><option value="0">No</option><option value="1">Yes</option></select></label>
+                <label class="span">Description <textarea name="description"></textarea></label>
+                <label class="span">BSS note <input name="note"></label>
+            </div>
             <div class="actions">
+                <button class="btn ghost" type="button" onclick="stepUserTab(this, -1)">Back</button>
+                <button class="btn ghost" type="button" onclick="stepUserTab(this, 1)">Next</button>
                 <button class="btn" type="submit">${esc(submitLabel)}</button>
                 <p class="err form-err"></p>
             </div>
@@ -533,14 +647,48 @@ function formObject(form) {
     return raw;
 }
 
+function missingCreateFields(form) {
+    const checks = [
+        ["username", "general", "Username"],
+        ["password", "general", "Password"],
+        ["id_plan", "general", "Plan"],
+        ["firstname", "personal", "First name"],
+    ];
+    if (form.dataset.requireCompany === "1") {
+        checks.push(["company_name", "personal", "Company"]);
+    }
+    for (const [name, tab, label] of checks) {
+        const el = form.elements[name];
+        if (!el || !String(el.value || "").trim()) {
+            return { name, tab, label };
+        }
+    }
+    return null;
+}
+
 async function submitUser(event, path, kind, viewName) {
     event.preventDefault();
-    const err = event.target.querySelector(".form-err");
+    const form = event.target;
+    const err = form.querySelector(".form-err");
     if (err) err.textContent = "";
+    const missing = missingCreateFields(form);
+    if (missing) {
+        switchUserTab(form, missing.tab);
+        if (err) err.textContent = `${missing.label} is required`;
+        const el = form.elements[missing.name];
+        if (el && el.focus) el.focus();
+        return false;
+    }
     try {
-        const result = await api(path, { method: "POST", body: JSON.stringify(formObject(event.target)) });
+        const result = await api(path, { method: "POST", body: JSON.stringify(formObject(form)) });
         const creds = result.credentials || {};
-        lastCreated = { kind, username: creds.username || (result.data && result.data.username) || "", password: creds.password || (result.data && result.data.password) || "" };
+        lastCreated = {
+            kind,
+            username: creds.username || (result.data && result.data.username) || "",
+            password: creds.password || (result.data && result.data.password) || "",
+            data: result.data || {},
+        };
+        creatingView = null;
         show(viewName);
     } catch (exc) {
         if (err) err.textContent = exc.message || "Create failed";

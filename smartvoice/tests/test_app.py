@@ -81,6 +81,21 @@ class BssAppTests(unittest.TestCase):
         self.assertIn(".login.hidden", css)
         self.assertIn("display: none !important", css)
 
+    def test_customer_create_form_is_tabbed(self):
+        js = (ROOT / "smartvoice/app/static/app.js").read_text(encoding="utf-8")
+        css = (ROOT / "smartvoice/app/static/smartvoice.css").read_text(encoding="utf-8")
+        self.assertIn("startCreate('customers')", js)
+        self.assertIn("New customer", js)
+        self.assertIn('data-tab="general"', js)
+        self.assertIn('data-tab="personal"', js)
+        self.assertIn('data-tab="supplementary"', js)
+        self.assertIn(">General<", js)
+        self.assertIn(">Personal<", js)
+        self.assertIn(">Supplementary<", js)
+        self.assertIn("createdRecordCard", js)
+        self.assertIn(".tab-panel", css)
+        self.assertIn(".tab-btn.active", css)
+
     def test_health_reports_bss_and_ocs(self):
         data = self.client.get("/api/health").json()
         self.assertEqual(data["role"], "bss")
