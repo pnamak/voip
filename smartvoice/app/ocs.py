@@ -232,8 +232,81 @@ class MockOcs:
                 "sessiontime": 73,
                 "sessionbill": 0.41,
                 "starttime": "2026-08-13 04:12:01",
-                "terminatecauseid": "16",
-            }
+                "terminatecauseid": 1,
+                "src": "alice",
+                "callerid": "Alice Tari",
+                "buycost": 0.12,
+                "real_sessiontime": 73,
+                "idPlanname": "SmartVoice Default",
+                "idPrefixdestination": "Vanuatu mobile",
+                "idTrunktrunkcode": "Pacific-Out",
+                "uniqueid": "mock-cdr-1",
+            },
+            {
+                "id": 2,
+                "id_user": 22,
+                "idUserusername": "bobpost",
+                "calledstation": "67855501",
+                "sessiontime": 240,
+                "sessionbill": 1.15,
+                "starttime": "2026-08-13 05:40:00",
+                "terminatecauseid": 1,
+                "src": "bobpost",
+                "callerid": "Bob Kalsong",
+                "buycost": 0.40,
+                "real_sessiontime": 240,
+                "idPlanname": "Office Trunk",
+                "idPrefixdestination": "Vanuatu",
+                "idTrunktrunkcode": "Pacific-Out",
+                "uniqueid": "mock-cdr-2",
+            },
+        ]
+        self._failed = [
+            {
+                "id": 1,
+                "id_user": 21,
+                "idUserusername": "alice",
+                "src": "alice",
+                "callerid": "Alice Tari",
+                "calledstation": "67899999",
+                "starttime": "2026-08-13 04:15:22",
+                "terminatecauseid": 3,
+                "hangupcause": 19,
+                "idPlanname": "SmartVoice Default",
+                "idPrefixdestination": "Vanuatu mobile",
+                "idTrunktrunkcode": "Pacific-Out",
+                "uniqueid": "mock-fail-1",
+            },
+            {
+                "id": 2,
+                "id_user": 22,
+                "idUserusername": "bobpost",
+                "src": "bobpost",
+                "callerid": "Bob Kalsong",
+                "calledstation": "0015550100",
+                "starttime": "2026-08-13 05:41:10",
+                "terminatecauseid": 2,
+                "hangupcause": 17,
+                "idPlanname": "Office Trunk",
+                "idPrefixdestination": "International",
+                "idTrunktrunkcode": "Pacific-Out",
+                "uniqueid": "mock-fail-2",
+            },
+            {
+                "id": 3,
+                "id_user": 21,
+                "idUserusername": "alice",
+                "src": "DID Call",
+                "callerid": "alice",
+                "calledstation": "2001",
+                "starttime": "2026-08-13 05:50:00",
+                "terminatecauseid": 6,
+                "hangupcause": 20,
+                "idPlanname": "SmartVoice Default",
+                "idPrefixdestination": "Extensions",
+                "idTrunktrunkcode": "",
+                "uniqueid": "mock-fail-3",
+            },
         ]
         self._online = [
             {
@@ -325,10 +398,21 @@ class MockOcs:
                     kept.append(row)
                 elif comparison == "st" and str(value).lower() in str(current or "").lower():
                     kept.append(row)
-                elif comparison == "gt" and float(current or 0) > float(value):
-                    kept.append(row)
-                elif comparison == "lt" and float(current or 0) < float(value):
-                    kept.append(row)
+                elif comparison in {"gt", "lt"}:
+                    try:
+                        left = float(current or 0)
+                        right = float(value)
+                        if comparison == "gt" and left > right:
+                            kept.append(row)
+                        elif comparison == "lt" and left < right:
+                            kept.append(row)
+                    except (TypeError, ValueError):
+                        left = str(current or "")
+                        right = str(value)
+                        if comparison == "gt" and left > right:
+                            kept.append(row)
+                        elif comparison == "lt" and left < right:
+                            kept.append(row)
             result = kept
         return result
 
@@ -340,6 +424,7 @@ class MockOcs:
             "call": self._calls,
             "callOnLine": self._online,
             "sip": self._sip,
+            "callFailed": self._failed,
         }.get(module, [])
         rows = self._apply_filter(list(table))
         start = 0 if page <= 1 else (page - 1) * limit

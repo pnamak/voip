@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>SmartVoice BSS</title>
     <link rel="icon" href="static/logo.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="static/smartvoice.css?v=3">
+    <link rel="stylesheet" href="static/smartvoice.css?v=4">
 </head>
 <body>
     <div id="login" class="login">
@@ -24,14 +24,21 @@
             <div class="brand"><img src="static/logo.svg" alt=""><span>SmartVoice</span></div>
             <p>BSS for customers, products, payments, and resellers. OCS by MagnusBilling.</p>
             <nav class="nav">
-                <button data-view="dashboard" class="active">Dashboard</button>
-                <button data-view="sip">SIP devices</button>
-                <button data-view="customers">Customers</button>
-                <button data-view="products">Products</button>
-                <button data-view="payments">Payments</button>
-                <button data-view="resellers">Resellers</button>
-                <button data-view="usage">OCS usage</button>
-                <button data-view="invoices">Invoices</button>
+                <button type="button" data-view="dashboard" class="active">Dashboard</button>
+                <button type="button" data-view="sip">SIP devices</button>
+                <button type="button" data-view="customers">Customers</button>
+                <button type="button" data-view="products">Products</button>
+                <button type="button" data-view="payments">Payments</button>
+                <button type="button" data-view="resellers">Resellers</button>
+                <div class="nav-group" data-group="reports">
+                    <button type="button" class="nav-parent" data-group-toggle="reports">Reports</button>
+                    <div class="nav-sub">
+                        <button type="button" data-view="cdr">CDR</button>
+                        <button type="button" data-view="cdr-failed">CDR Failed</button>
+                    </div>
+                </div>
+                <button type="button" data-view="usage">OCS usage</button>
+                <button type="button" data-view="invoices">Invoices</button>
             </nav>
         </aside>
         <main class="main">
@@ -48,6 +55,6 @@
             <section id="view"></section>
         </main>
     </div>
-    <script src="static/app.js?v=3"></script>
+    <script src="static/app.js?v=4"></script>
 </body>
 </html>

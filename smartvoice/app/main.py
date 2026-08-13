@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import config
 from .ocs import MagnusBillingOcs, MockOcs, OcsError, get_ocs
+from .reports import bound_dates, csv_text, matches_query, normalize_cdr, summarize
 from .sip_status import collect_sip_monitor
 from .store import BssStore
 
@@ -342,6 +343,89 @@ def usage(user: str = Depends(current_user)) -> dict[str, Any]:
         "live": _rows(ocs().read("callOnLine", page=1, limit=100)),
         "ocs": ocs().health(),
     }
+
+
+def _report(module: str, failed: bool, q: str, date_from: str, date_to: str, page: int, limit: int) -> dict[str, Any]:
+    start, end = bound_dates(date_from, date_to)
+    client = ocs()
+    client.clear_filter()
+    try:
+        if start:
+            client.set_filter("starttime", start, "gt", "date")
+        if end:
+            client.set_filter("starttime", end, "lt", "date")
+        payload = client.read(module, page=max(page, 1), limit=min(max(limit, 1), 1000))
+    finally:
+        client.clear_filter()
+    raw = _rows(payload)
+    total = payload.get("count", len(raw)) if isinstance(payload, dict) else len(raw)
+    rows = [normalize_cdr(row, failed=failed) for row in raw if matches_query(row, q)]
+    return {
+        "rows": rows,
+        "count": len(rows),
+        "ocs_count": total,
+        "summary": summarize(rows, failed=failed),
+        "filters": {"q": q, "date_from": date_from, "date_to": date_to, "page": page, "limit": limit},
+        "ocs": client.health(),
+    }
+
+
+@app.get("/api/reports/cdr")
+def report_cdr(
+    user: str = Depends(current_user),
+    q: str = "",
+    date_from: str = "",
+    date_to: str = "",
+    page: int = Query(1, ge=1),
+    limit: int = Query(200, ge=1, le=1000),
+) -> dict[str, Any]:
+    return _report("call", False, q, date_from, date_to, page, limit)
+
+
+@app.get("/api/reports/cdr-failed")
+def report_cdr_failed(
+    user: str = Depends(current_user),
+    q: str = "",
+    date_from: str = "",
+    date_to: str = "",
+    page: int = Query(1, ge=1),
+    limit: int = Query(200, ge=1, le=1000),
+) -> dict[str, Any]:
+    return _report("callFailed", True, q, date_from, date_to, page, limit)
+
+
+@app.get("/api/reports/cdr.csv")
+def report_cdr_csv(
+    user: str = Depends(current_user),
+    q: str = "",
+    date_from: str = "",
+    date_to: str = "",
+    page: int = Query(1, ge=1),
+    limit: int = Query(1000, ge=1, le=1000),
+) -> Response:
+    data = _report("call", False, q, date_from, date_to, page, limit)
+    return Response(
+        content=csv_text(data["rows"], failed=False),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="smartvoice-cdr.csv"'},
+    )
+
+
+@app.get("/api/reports/cdr-failed.csv")
+def report_cdr_failed_csv(
+    user: str = Depends(current_user),
+    q: str = "",
+    date_from: str = "",
+    date_to: str = "",
+    page: int = Query(1, ge=1),
+    limit: int = Query(1000, ge=1, le=1000),
+) -> Response:
+    data = _report("callFailed", True, q, date_from, date_to, page, limit)
+    return Response(
+        content=csv_text(data["rows"], failed=True),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="smartvoice-cdr-failed.csv"'},
+    )
 
 
 @app.get("/api/sip-devices")

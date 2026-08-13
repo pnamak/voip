@@ -5,9 +5,13 @@ const titles = {
     products: ["Products", "Catalog in BSS, rate plans charged by the OCS"],
     payments: ["Payments", "Collect in BSS, apply credit through OCS refill"],
     resellers: ["Resellers", "Agent accounts and downstream customer wallets"],
+    cdr: ["CDR", "Answered call detail records from the MagnusBilling OCS"],
+    "cdr-failed": ["CDR Failed", "Failed and unanswered attempts from the MagnusBilling OCS"],
     usage: ["OCS usage", "Live calls and CDRs from the online charging engine"],
     invoices: ["Invoices", "BSS invoices rolled up from OCS call charges"],
 };
+
+const reportState = { cdr: "", "cdr-failed": "" };
 
 const BASE = window.location.pathname.indexOf("/smartvoice") === 0 ? "/smartvoice" : "";
 
@@ -77,7 +81,10 @@ async function show(name) {
         clearInterval(refreshTimer);
         refreshTimer = null;
     }
-    document.querySelectorAll(".nav button").forEach((btn) => btn.classList.toggle("active", btn.dataset.view === name));
+    document.querySelectorAll("[data-view]").forEach((btn) => btn.classList.toggle("active", btn.dataset.view === name));
+    document.querySelectorAll(".nav-group").forEach((group) => {
+        if (group.querySelector(`[data-view="${name}"]`)) group.classList.add("open");
+    });
     document.getElementById("title").textContent = titles[name][0];
     document.getElementById("subtitle").textContent = titles[name][1];
     const render = views[name];
@@ -89,7 +96,10 @@ async function show(name) {
     }
 }
 
-document.querySelectorAll(".nav button").forEach((btn) => btn.addEventListener("click", () => show(btn.dataset.view)));
+document.querySelectorAll("[data-view]").forEach((btn) => btn.addEventListener("click", () => show(btn.dataset.view)));
+document.querySelectorAll("[data-group-toggle]").forEach((btn) => {
+    btn.addEventListener("click", () => btn.closest(".nav-group").classList.toggle("open"));
+});
 
 const views = {
     async dashboard() {
@@ -171,6 +181,12 @@ const views = {
             <div class="card">${table(["ID", "Username", "Company", "Customers", "Downstream wallet", "Own credit"], data.rows.map((r) => [r.id, r.username, r.company_name, r.customers, money(r.customer_wallet), money(r.credit)]))}</div>
         `;
     },
+    async cdr() {
+        await renderCdrReport("cdr", false);
+    },
+    async ["cdr-failed"]() {
+        await renderCdrReport("cdr-failed", true);
+    },
     async sip() {
         const data = await api("/api/sip-devices");
         setOcsPill(data.ocs);
@@ -213,6 +229,93 @@ const views = {
         `;
     },
 };
+
+function causeTag(label, failed) {
+    const kind = !failed && String(label).toUpperCase() === "ANSWER" ? "ok" : "post";
+    return `<span class="tag ${kind}">${esc(label || "")}</span>`;
+}
+
+function reportFilterForm(name) {
+    const params = new URLSearchParams(reportState[name] || "");
+    const path = name === "cdr" ? "cdr" : "cdr-failed";
+    return `
+        <form class="form card" onsubmit="return applyReport(event, '${name}')">
+            <label>Search <input name="q" value="${esc(params.get("q") || "")}" placeholder="User, source, destination"></label>
+            <label>From <input name="date_from" type="date" value="${esc(params.get("date_from") || "")}"></label>
+            <label>To <input name="date_to" type="date" value="${esc(params.get("date_to") || "")}"></label>
+            <button class="btn" type="submit">Run report</button>
+            <a class="btn ghost" href="${BASE}/api/reports/${path}.csv?${reportState[name] || ""}">Export CSV</a>
+        </form>
+    `;
+}
+
+async function renderCdrReport(name, failed) {
+    const path = failed ? "/api/reports/cdr-failed" : "/api/reports/cdr";
+    const qs = reportState[name] ? `?${reportState[name]}` : "";
+    const data = await api(path + qs);
+    setOcsPill(data.ocs);
+    const summary = data.summary || {};
+    const causeCards = (summary.top_causes || []).map((item) => `<div class="card"><h3>${esc(item.label)}</h3><div class="n">${item.count}</div></div>`).join("");
+    const rows = failed
+        ? (data.rows || []).map((r) => [
+            esc(r.starttime),
+            esc(r.username),
+            esc(r.src),
+            esc(r.callerid),
+            esc(r.destination),
+            esc(r.prefix),
+            esc(r.plan),
+            esc(r.trunk),
+            causeTag(r.terminate_cause, true),
+            esc(r.hangup_cause || "—"),
+        ])
+        : (data.rows || []).map((r) => [
+            esc(r.starttime),
+            esc(r.username),
+            esc(r.src),
+            esc(r.callerid),
+            esc(r.destination),
+            esc(r.prefix),
+            esc(r.duration),
+            money(r.billed),
+            money(r.buy_cost),
+            money(r.margin),
+            causeTag(r.terminate_cause, false),
+        ]);
+    const headers = failed
+        ? ["Started", "User", "Source", "Caller ID", "Destination", "Prefix", "Plan", "Trunk", "Cause", "Hangup"]
+        : ["Started", "User", "Source", "Caller ID", "Destination", "Prefix", "Duration", "Billed", "Buy", "Margin", "Cause"];
+    document.getElementById("view").innerHTML = `
+        ${reportFilterForm(name)}
+        <div class="grid">
+            <div class="card"><h3>${failed ? "Failed attempts" : "CDRs"}</h3><div class="n">${summary.count || 0}</div></div>
+            ${failed ? "" : `<div class="card"><h3>Talk time</h3><div class="n">${esc(summary.duration || "0:00")}</div></div>
+            <div class="card"><h3>Billed</h3><div class="n">${money(summary.billed)}</div></div>
+            <div class="card"><h3>Margin</h3><div class="n">${money(summary.margin)}</div></div>`}
+            ${causeCards}
+        </div>
+        <div class="card">
+            <div class="toolbar">
+                <h3>${failed ? "Failed call attempts" : "Call detail records"}</h3>
+                <span class="muted">${data.ocs_count != null ? `${data.ocs_count} in OCS` : ""}</span>
+            </div>
+            ${table(headers, rows)}
+        </div>
+    `;
+}
+
+function applyReport(event, name) {
+    event.preventDefault();
+    const form = new FormData(event.target);
+    const params = new URLSearchParams();
+    ["q", "date_from", "date_to"].forEach((key) => {
+        const value = String(form.get(key) || "").trim();
+        if (value) params.set(key, value);
+    });
+    reportState[name] = params.toString();
+    show(name);
+    return false;
+}
 
 function esc(value) {
     return String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));

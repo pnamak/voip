@@ -147,6 +147,33 @@ class BssAppTests(unittest.TestCase):
         html = (ROOT / "smartvoice/app/static/index.html").read_text(encoding="utf-8")
         self.assertIn('data-view="sip"', html)
 
+    def test_cdr_and_failed_reports(self):
+        self.assertEqual(self.client.get("/api/reports/cdr").status_code, 401)
+        self.assertEqual(self.client.get("/api/reports/cdr-failed").status_code, 401)
+        self._login()
+        cdr = self.client.get("/api/reports/cdr").json()
+        self.assertGreaterEqual(cdr["count"], 2)
+        self.assertTrue(any(row["username"] == "alice" for row in cdr["rows"]))
+        self.assertEqual(cdr["rows"][0]["terminate_cause"], "ANSWER")
+        failed = self.client.get("/api/reports/cdr-failed").json()
+        self.assertGreaterEqual(failed["count"], 3)
+        self.assertTrue(any(row["terminate_cause"] == "NOANSWER" for row in failed["rows"]))
+        self.assertTrue(any(row["hangup_cause"] == "User busy" for row in failed["rows"]))
+        filtered = self.client.get("/api/reports/cdr-failed", params={"q": "alice"}).json()
+        self.assertTrue(filtered["rows"])
+        self.assertTrue(all("alice" in json.dumps(row).lower() for row in filtered["rows"]))
+        csv_body = self.client.get("/api/reports/cdr.csv")
+        self.assertEqual(csv_body.status_code, 200, csv_body.text)
+        self.assertIn("text/csv", csv_body.headers["content-type"])
+        self.assertIn("alice", csv_body.text)
+        failed_csv = self.client.get("/api/reports/cdr-failed.csv")
+        self.assertEqual(failed_csv.status_code, 200, failed_csv.text)
+        self.assertIn("NOANSWER", failed_csv.text)
+        html = (ROOT / "smartvoice/app/static/index.html").read_text(encoding="utf-8")
+        self.assertIn('data-view="cdr"', html)
+        self.assertIn('data-view="cdr-failed"', html)
+        self.assertIn("Reports", html)
+
 
 class SipStatusParseTests(unittest.TestCase):
     def test_classify_and_parse_pjsip(self):
